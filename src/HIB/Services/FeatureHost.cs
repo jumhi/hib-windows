@@ -175,27 +175,15 @@ public sealed class FeatureHost : IDisposable
             {
                 Caption = "ADB",
                 Title = "Couldn't connect to the phone over ADB",
-                Body = r.Diagnosis ?? r.FailureText ?? "Turn on Wireless debugging on the phone.",
+                Body = AdbService.Explain(r) is { Length: > 0 } why ? why : "Turn on Wireless debugging on the phone.",
                 Icon = ImageUtil.AppIcon(),
                 Seconds = 12,
             };
             vm.Buttons.Add(new ToastButton("Pair with ADB QR", () => { app.ShowMainWindow("phone"); vm.Close(); }, "primary"));
             app.Toasts.Show(vm);
         });
-        Mirror.MirrorExited += e => Ui.Post(() =>
-        {
-            if (e.ExitCode == 0 && !e.NeedsPairing) return;
-            var vm = new ToastViewModel
-            {
-                Caption = "Mirroring",
-                Title = e.NeedsPairing ? "The phone needs to be paired for ADB" : "Mirroring stopped",
-                Body = Mirror.LastError ?? "",
-                Icon = ImageUtil.AppIcon(),
-                Seconds = 12,
-            };
-            if (e.NeedsPairing) vm.Buttons.Add(new ToastButton("Pair with ADB QR", () => { app.ShowMainWindow("phone"); vm.Close(); }, "primary"));
-            app.Toasts.Show(vm);
-        });
+        // Mirroring start/slow/exit toasts with the real reason (MirrorLauncher).
+        Launcher = new MirrorLauncher(app, this);
         Codes.CodeCopied += (code, source) => Ui.Post(() => app.Toasts.Show(new ToastViewModel
         {
             Caption = "Login code",
@@ -240,6 +228,8 @@ public sealed class FeatureHost : IDisposable
     public CallRelayService Calls { get; }
     public ScenesBridge Scenes { get; }
     public LoginCodeAutoCopier Codes { get; }
+    /// <summary>Starts mirror / desktop / app windows with visible progress and real failure reasons.</summary>
+    public MirrorLauncher Launcher { get; }
 
     public bool AdbAutoConnect
     {
@@ -252,14 +242,19 @@ public sealed class FeatureHost : IDisposable
     public string DeviceNameForWindows => _core.Link.Device?.Name ?? _core.Settings.LastPhoneName ?? "Phone";
 
     /// <summary>Connects ADB to the current phone using the ports it reported.</summary>
-    public async Task<AdbConnectResult?> AutoConnectAdbAsync(bool silent, bool killServer = false)
+    /// <param name="notify">Show the "Couldn't connect" toast on failure (default: when not silent).</param>
+    public async Task<AdbConnectResult?> AutoConnectAdbAsync(bool silent, bool killServer = false, bool? notify = null)
     {
         var d = _core.Link.Device;
         if (d is null || Adb.AdbPath is null) return null;
         if (silent && (!AdbAutoConnect || Adb.IsConnected || Adb.UserRequestedDisconnect)) return null;
-        var ip = !string.IsNullOrEmpty(d.IpAddress) && d.IpAddress != "Unknown" ? d.IpAddress : d.RemoteAddress;
-        return await Adb.ConnectAsync(ip, d.AdbPorts, killServer, silent);
+        var ip = PhoneAdbIp(d);
+        return await Adb.ConnectAsync(ip, d.AdbPorts, killServer, silent, notify: notify);
     }
+
+    /// <summary>The phone's own LAN address (what adbd listens on), else where its link came from.</summary>
+    static string PhoneAdbIp(PhoneDeviceInfo d)
+        => !string.IsNullOrEmpty(d.IpAddress) && d.IpAddress != "Unknown" ? d.IpAddress : d.RemoteAddress;
 
     void RingThisPc(bool ring)
     {

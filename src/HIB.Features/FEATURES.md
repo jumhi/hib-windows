@@ -77,8 +77,10 @@ implementations: `JsonFileSettingsStore` (atomic JSON file) and `InMemorySetting
    - macOS: `~/Library/Android/sdk/platform-tools`, `/opt/homebrew/bin`, `/usr/local/bin`.
    - Linux: the usual system paths.
 
-`AdbLocator.AdbEnvironment(adbPath)` returns `PATH=<adbDir>;…` and `ADB=<adbPath>`. Use it when
-launching scrcpy so scrcpy uses the same adb server.
+`AdbLocator.AdbEnvironment(adbPath, scrcpyPath)` returns `PATH=<adbDir>;…` and `ADB=<adbPath>`. Use it
+when launching scrcpy so scrcpy uses the same adb server. On Windows scrcpy runs `%ADB%` unquoted, so a
+path with a space is replaced by its 8.3 short name (or, without one, `ADB` is left unset and scrcpy
+uses the adb.exe in its own folder).
 
 ### AdbService
 Bindable properties: `IsConnected`, `IsConnecting`, `ConnectedIp`, `Port`, `Mode`, `ConsoleLog`,
@@ -132,8 +134,17 @@ Arguments are identical to the Mac's `startScrcpy`:
 `MirrorSettings` uses the Mac's preference keys (`scrcpyBitrate` = 4, `scrcpyResolution` = 1200,
 `scrcpyDesktopDpi` = "192", and so on).
 
-`MirrorExited` reports the exit code, the output, and `NeedsPairing`. `Sessions` lists the running
-windows; stop them with `Stop(session)` or `StopAll()`.
+`MirrorExited` reports the exit code, the output, `NeedsPairing`, and — when `IsProblem` — a `Title`
+and the real `Reason` (scrcpy's last specific `ERROR:` line, see `ScrcpyOutput.ExtractError`).
+`MirrorWindowOpened` fires when the window is on screen (scrcpy 5 logs `INFO: Texture: WxH` with the
+first frame; on Windows a visible window handle also counts). `MirrorSlowToOpen` fires once when scrcpy
+still runs 12 s after start without a window (`MirrorWatchdog`). On Windows H.I.B calls
+`AllowSetForegroundWindow(ASFW_ANY)` before starting scrcpy and brings its window to the front (and
+onto a monitor) when it appears; a saved `--window-x/y` is clamped to a monitor that exists.
+`Sessions` lists the running windows; stop them with `Stop(session)` or `StopAll()`.
+
+Everything (ADB console, scrcpy command lines and output, `HibFeatures.Trace`) also goes to
+`HibLog` — `%LOCALAPPDATA%\H.I.B\logs\hib.log`, ≤ 2 MB with one rotation, scrubbed by `LogScrubber`.
 
 scrcpy mirrors through ADB, so Android never shows its "share your screen" prompt.
 `MirrorService.BuildArguments(...)` is public, so the ADB console can show the exact command.

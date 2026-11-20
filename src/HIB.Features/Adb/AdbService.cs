@@ -19,6 +19,8 @@ public sealed record AdbConnectResult(bool Success, string? Address, string Outp
 public sealed class AdbService : ObservableObject
 {
     public const string PhonePackage = "com.sameerasw.airsync";
+    /// <summary><see cref="AdbConnectResult.Output"/> when another connect was already running.</summary>
+    public const string BusyOutput = "busy";
 
     private readonly AdbLocator _locator;
     private readonly ISettingsStore _settings;
@@ -95,16 +97,18 @@ public sealed class AdbService : ObservableObject
         }
     }
 
-    internal void AppendLog(string text)
+    /// <summary>Adds to the ADB console (and, unless <paramref name="toFile"/> is false, to hib.log).</summary>
+    internal void AppendLog(string text, bool toFile = true)
     {
         var next = ConsoleLog + text;
         if (next.Length > 20_000) next = next[^20_000..];
         ConsoleLog = next;
+        if (toFile) HibLog.Write("adb", text);
     }
 
     private void Log(string message)
     {
-        AppendLog("\n[Binary Detection] " + message);
+        AppendLog("\n[Binary Detection] " + message, toFile: false); // the trace below reaches hib.log
         HibFeatures.Trace("[adb-connector] " + message);
     }
 
@@ -247,6 +251,17 @@ public sealed class AdbService : ObservableObject
         ("timed out", "The connection attempt timed out — check that both devices are on the same Wi-Fi network and Wireless Debugging is still on."),
     ];
 
+    /// <summary>One short, real reason for a failed connect: the diagnosis plus adb's own words.</summary>
+    public static string Explain(AdbConnectResult r)
+    {
+        if (r.Success) return "";
+        if (r.Output == BusyOutput) return "Another ADB connection attempt is still running. Try again in a moment.";
+        var raw = r.Output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+        if (r.Diagnosis is { Length: > 0 } d)
+            return raw is null || raw == d || d.Contains(raw, StringComparison.Ordinal) ? d : d + "\nadb said: " + raw;
+        return raw ?? r.FailureText ?? "ADB connection failed.";
+    }
+
     internal static string? Diagnosis(IEnumerable<string> outputs)
     {
         foreach (var output in outputs)
@@ -268,27 +283,39 @@ public sealed class AdbService : ObservableObject
     /// <c>device.adbPorts</c>; with none, falls back to <c>adb mdns services</c> when enabled.
     /// Success means the output contains "connected to". Concurrent calls are ignored.
     /// </summary>
+    /// <param name="notify">Raise <see cref="ConnectionFailed"/> on failure (default: when not silent).
+    /// Callers that show their own message pass false.</param>
     public async Task<AdbConnectResult> ConnectAsync(string ip, IReadOnlyList<string>? reportedPorts,
-        bool killServer = false, bool silent = false, CancellationToken ct = default)
+        bool killServer = false, bool silent = false, CancellationToken ct = default, bool? notify = null)
     {
         if (!silent) UserRequestedDisconnect = false;
+        var raise = notify ?? !silent;
         if (Interlocked.CompareExchange(ref _connecting, 1, 0) != 0)
         {
             Log("ADB connection already in progress, ignoring duplicate request");
-            return new AdbConnectResult(false, null, "busy", null, null);
+            return new AdbConnectResult(false, null, BusyOutput, null, null);
         }
         IsConnecting = true;
+
+        // Every early "no" is a real reason the user must see (not just a quiet false).
+        AdbConnectResult Fail(string text)
+        {
+            LastResult = text;
+            IsConnected = false;
+            AppendLog("\n" + text);
+            var r = new AdbConnectResult(false, null, text, text, text);
+            if (raise) ConnectionFailed?.Invoke(r);
+            return r;
+        }
+
         try
         {
             var adb = AdbPath;
             if (adb is null)
             {
-                LastResult = OperatingSystem.IsWindows()
+                return Fail(OperatingSystem.IsWindows()
                     ? "ADB not found. Put adb.exe in the tools folder or install Android platform-tools."
-                    : "ADB not found. Please install via Homebrew: brew install android-platform-tools";
-                ConsoleLog = LastResult;
-                IsConnected = false;
-                return new AdbConnectResult(false, null, LastResult, null, LastResult);
+                    : "ADB not found. Please install via Homebrew: brew install android-platform-tools");
             }
 
             if (killServer || AlwaysKillAdbBeforeConnect)
@@ -304,8 +331,7 @@ public sealed class AdbService : ObservableObject
                 if (!FallbackToMdns)
                 {
                     Log("Device reported no ADB ports and mDNS fallback is disabled.");
-                    IsConnected = false;
-                    return new AdbConnectResult(false, null, "", null, null);
+                    return Fail("The phone didn't report its Wireless debugging port. Turn on Wireless debugging on the phone.");
                 }
                 Log("Device reported no ADB ports, attempting mDNS discovery...");
                 var mdns = await RunAsync(["mdns", "services"], TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
@@ -313,10 +339,8 @@ public sealed class AdbService : ObservableObject
                 if (ports.Count == 0)
                 {
                     Log($"mDNS discovery found no ports for {ip}.");
-                    IsConnected = false;
-                    LastResult = "No ADB ports reported by device and mDNS discovery failed.";
-                    AppendLog("\n" + LastResult);
-                    return new AdbConnectResult(false, null, LastResult, null, LastResult);
+                    return Fail("The phone didn't report its Wireless debugging port, and it couldn't be found on the network "
+                                + "(that only works on the same subnet). Turn Wireless debugging off and on again on the phone.");
                 }
                 Log("mDNS discovery found ports: " + string.Join(", ", ports));
             }
@@ -326,11 +350,7 @@ public sealed class AdbService : ObservableObject
                 ports = reportedPorts.Select(p => int.TryParse(p, out var v) && v is > 0 and <= 65535 ? v : -1)
                                      .Where(v => v > 0).ToList();
                 if (ports.Count == 0)
-                {
-                    LastResult = "Device reported ADB ports but none could be parsed as valid port numbers.";
-                    IsConnected = false;
-                    return new AdbConnectResult(false, null, LastResult, null, LastResult);
-                }
+                    return Fail("Device reported ADB ports but none could be parsed as valid port numbers.");
             }
 
             Log($"Proceeding with ADB connection attempts to {ip}...");
@@ -364,7 +384,7 @@ public sealed class AdbService : ObservableObject
             var summary = failures.Count == 0 ? "Failed to connect to device on any available port." : string.Join("\n", failures);
             AppendLog("\n" + summary);
             var fail = new AdbConnectResult(false, null, summary, Diagnosis(failures), BuildFailureText(failures));
-            if (!silent) ConnectionFailed?.Invoke(fail);
+            if (raise) ConnectionFailed?.Invoke(fail);
             return fail;
         }
         finally
@@ -372,6 +392,33 @@ public sealed class AdbService : ObservableObject
             IsConnecting = false;
             Interlocked.Exchange(ref _connecting, 0);
         }
+    }
+
+    /// <summary>
+    /// Wireless ADB still reaches the phone (<c>adb -s ip:port get-state</c> says "device"). Wireless debugging
+    /// gets a new port whenever it restarts, so a connection made earlier can be dead while
+    /// <see cref="IsConnected"/> still says true. Clears it when dead, so the next connect uses fresh ports.
+    /// </summary>
+    public async Task<bool> VerifyConnectedAsync(CancellationToken ct = default)
+    {
+        if (!IsConnected) return false;
+        if (WiredAdbEnabled && !string.IsNullOrEmpty(SelectedWiredSerial)) return true;
+        if (string.IsNullOrEmpty(ConnectedIp) || Port <= 0) return false;
+        var serial = $"{ConnectedIp}:{Port}";
+        var r = await RunAsync(["-s", serial, "get-state"], TimeSpan.FromSeconds(6), ct).ConfigureAwait(false);
+        var state = r.StdOutText.Trim();
+        if (r.ExitCode == 0 && state == "device") return true;
+        MarkLost($"adb get-state {serial}: {(state + " " + r.StdErr).Trim()}");
+        return false;
+    }
+
+    /// <summary>The wireless ADB connection is gone (a failed get-state, or scrcpy couldn't reach the phone).</summary>
+    internal void MarkLost(string why)
+    {
+        if (!IsConnected) return;
+        Log($"ADB connection lost ({why}).");
+        IsConnected = false;
+        OnPropertyChanged(nameof(CurrentSerial));
     }
 
     /// <summary><c>adb disconnect ip:port</c> (also called when the phone link drops).</summary>

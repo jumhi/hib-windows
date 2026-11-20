@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using HIB.Core.Phone;
 using HIB.Core.Space;
 using HIB.Features.Adb;
+using HIB.Features.Mirror;
 using HIB.Services;
 
 namespace HIB.ViewModels;
@@ -48,6 +49,7 @@ public partial class HomeViewModel : ViewModelBase
             f.Adb.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
             f.Audio.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
             f.Mirror.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
+            f.Launcher.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
         }
         else
             core.Hub.RingStateChanged += r => Ui.Post(() => IsRinging = r);
@@ -106,6 +108,9 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial bool IsAudioHere { get; set; }
     [ObservableProperty] public partial bool IsMirroring { get; set; }
     [ObservableProperty] public partial string AdbText { get; set; } = "ADB isn't connected";
+    /// <summary>Mirror / Desktop show "Starting…" from the click until scrcpy is launched.</summary>
+    [ObservableProperty] public partial string MirrorLabel { get; set; } = "Mirror";
+    [ObservableProperty] public partial string DesktopLabel { get; set; } = "Desktop";
     public string AdbModeIcon => IsAdbWired ? Icons.Cable : Icons.Radio;
     public string AdbModeText => IsAdbWired ? "Wired ADB" : "Wireless ADB";
     public string LinkText => IsConnected ? $"Connected over Wi-Fi · {_app.Core.Link.Device?.IpAddress}" : "Not connected";
@@ -203,6 +208,9 @@ public partial class HomeViewModel : ViewModelBase
         IsAudioHere = f.Audio.IsActive;
         IsMirroring = f.Mirror.IsMirroring;
         AdbText = f.Adb.IsConnecting ? "Connecting ADB…" : f.Adb.IsConnected ? $"ADB connected ({(IsAdbWired ? "USB" : "Wi-Fi")})" : "ADB isn't connected";
+        var starting = f.Launcher.StartingKind;
+        MirrorLabel = starting is MirrorKind.Mirror or MirrorKind.App ? "Starting…" : "Mirror";
+        DesktopLabel = starting is MirrorKind.Desktop ? "Starting…" : "Desktop";
     }
 
     void RefreshSpace()
@@ -336,50 +344,38 @@ public partial class HomeViewModel : ViewModelBase
     {
         if (_app.Features is not { } f) return;
         if (f.Adb.IsConnected) { await f.Adb.DisconnectAsync(userInitiated: true); return; }
+        if (_app.Core.Link.Device is null) { Problem("Connect your phone first."); return; }
+        // A failed connect shows its own toast (with "Pair with ADB QR"); no silent page switch.
         var r = await f.AutoConnectAdbAsync(silent: false);
-        if (r is null || !r.Success) _app.Navigate?.Invoke("phone");
+        if (r is null) Problem("ADB isn't available on this PC.");
     }
 
-    // ---- recent apps / mirroring ----
+    // ---- recent apps / mirroring (MirrorLauncher shows progress and the real reason on failure) ----
     [RelayCommand]
     async Task OpenApp(PhoneAppItem? item)
     {
         if (item is null || _app.Features is not { } f) return;
-        if (!await EnsureAdbAsync(f)) return;
-        await f.Mirror.StartAppAsync(f.DeviceNameForWindows, item.Package, item.Name);
+        await f.Launcher.AppAsync(item.Package, item.Name);
     }
 
     [RelayCommand]
     async Task Mirror()
     {
-        if (_app.Features is not { } f) return;
-        if (!await EnsureAdbAsync(f)) return;
-        if (await f.Mirror.StartMirrorAsync(f.DeviceNameForWindows) is null) Problem(f.Mirror.LastError ?? "Couldn't start mirroring.");
+        if (_app.Features is not { } f) { Problem("Mirroring isn't available in this build."); return; }
+        await f.Launcher.MirrorAsync();
     }
 
     [RelayCommand]
     async Task Desktop()
     {
-        if (_app.Features is not { } f) return;
-        if (!await EnsureAdbAsync(f)) return;
-        if (await f.Mirror.StartDesktopAsync(f.DeviceNameForWindows) is null) Problem(f.Mirror.LastError ?? "Couldn't start desktop mode.");
+        if (_app.Features is not { } f) { Problem("Desktop mode isn't available in this build."); return; }
+        await f.Launcher.DesktopAsync();
     }
 
     [RelayCommand] void StopMirroring() => _app.Features?.Mirror.StopAll();
     [RelayCommand] void ToggleAudioHere() => _app.Features?.Audio.Toggle();
     [RelayCommand] void OpenApps() => _app.Navigate?.Invoke("apps");
     [RelayCommand] void OpenMirrorSettings() => _app.Navigate?.Invoke("phone");
-
-    /// <summary>Mirroring needs ADB: connect it on the spot, or open the ADB settings if that fails.</summary>
-    async Task<bool> EnsureAdbAsync(FeatureHost f)
-    {
-        if (f.Adb.IsConnected) return true;
-        if (_app.Core.Link.Device is null) { Problem("Connect your phone first."); return false; }
-        var r = await f.AutoConnectAdbAsync(silent: false);
-        if (r is { Success: true }) return true;
-        _app.Navigate?.Invoke("phone");
-        return false;
-    }
 
     void Problem(string text) => _app.Toasts.Show(new ToastViewModel { Caption = "Mirroring", Title = text, Icon = ImageUtil.AppIcon(), Seconds = 6 });
 }

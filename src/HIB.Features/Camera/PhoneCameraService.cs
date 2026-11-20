@@ -127,7 +127,7 @@ public sealed class PhoneCameraService : ObservableObject, IDisposable
         if (serial is null) { LastError = "Connect the phone with ADB first (Wireless debugging)."; return; }
         var scrcpy = _adb.Locator.ScrcpyPath;
         if (scrcpy is null) { LastError = "scrcpy isn't installed (it ships in the tools folder)."; return; }
-        var env = _adb.AdbPath is { } adbPath ? AdbLocator.AdbEnvironment(adbPath) : null;
+        var env = _adb.AdbPath is { } adbPath ? AdbLocator.AdbEnvironment(adbPath, scrcpy) : null;
         var process = new Process { StartInfo = ProcessRunner.CreateStartInfo(scrcpy, Options.Arguments(serial), env), EnableRaisingEvents = true };
         lock (_tail) _tail.Clear();
         void OnLine(object? _, DataReceivedEventArgs e)
@@ -191,7 +191,7 @@ public sealed class PhoneCameraService : ObservableObject, IDisposable
         IsListing = true;
         try
         {
-            var env = _adb.AdbPath is { } adbPath ? AdbLocator.AdbEnvironment(adbPath) : null;
+            var env = _adb.AdbPath is { } adbPath ? AdbLocator.AdbEnvironment(adbPath, scrcpy) : null;
             var r = await ProcessRunner.RunAsync(scrcpy, PhoneCameraOptions.ListCamerasArguments(serial), TimeSpan.FromSeconds(30), env).ConfigureAwait(false);
             var lines = r.Combined.Split('\n').Select(l => l.Trim()).Where(l => l.Contains("--camera-id=")).ToList();
             CameraList = lines.Count > 0 ? string.Join("\n", lines)

@@ -109,19 +109,10 @@ public partial class AppsViewModel : ViewModelBase
         if (item is null) return;
         if (_app.Features is not { } f) { Status = "Opening apps needs the mirroring tools."; return; }
         Touch(item.Package, launched: true);
-        if (!f.Adb.IsConnected)
-        {
-            Status = "Connecting ADB…";
-            var r = await f.AutoConnectAdbAsync(silent: false);
-            if (r is not { Success: true })
-            {
-                Status = "ADB isn't connected. Set it up in Settings › Mirroring & ADB.";
-                return;
-            }
-        }
         item.IsLaunching = true;
-        var s = await f.Mirror.StartAppAsync(f.DeviceNameForWindows, item.Package, item.Name);
-        Status = s is null ? f.Mirror.LastError ?? $"Couldn't open {item.Name}." : "";
+        Status = f.Adb.IsConnected ? "" : "Connecting ADB…";
+        var s = await f.Launcher.AppAsync(item.Package, item.Name);
+        Status = s is null ? (f.Launcher.LastProblem is { Length: > 0 } why ? why : $"Couldn't open {item.Name}.") : "";
         await Task.Delay(2500);
         item.IsLaunching = false;
     }

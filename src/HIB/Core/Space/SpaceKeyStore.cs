@@ -30,6 +30,7 @@ public sealed class SpaceKeyStore
             {
                 _loaded = true;
                 _cached = ReadFile();
+                if (_cached is not null) HIB.Features.LogScrubber.AddSecret(Convert.ToBase64String(_cached));
             }
             return _cached is null ? null : (byte[])_cached.Clone();
         }
@@ -47,6 +48,7 @@ public sealed class SpaceKeyStore
             if (current is not null && CryptographicOperations.FixedTimeEquals(current, key)) return false;
             _cached = (byte[])key.Clone();
             _loaded = true;
+            HIB.Features.LogScrubber.AddSecret(Convert.ToBase64String(key)); // never in hib.log
             WriteFile(key);
             return true;
         }

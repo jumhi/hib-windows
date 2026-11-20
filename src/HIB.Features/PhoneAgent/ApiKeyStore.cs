@@ -26,6 +26,7 @@ public sealed class ApiKeyStore
     {
         var trimmed = key.Trim();
         if (trimmed.Length == 0) return false;
+        LogScrubber.AddSecret(trimmed);
         try
         {
             Directory.CreateDirectory(_directory);
@@ -80,6 +81,7 @@ public sealed class ApiKeyStore
                 ? ProtectedData.Unprotect(bytes, Entropy, DataProtectionScope.CurrentUser)
                 : bytes;
             var key = Encoding.UTF8.GetString(plain).Trim();
+            LogScrubber.AddSecret(key); // never in hib.log
             return key.Length == 0 ? null : key;
         }
         catch

@@ -29,7 +29,10 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            StartLogFile();
             var core = new HibCore();
+            // Never let the pairing key reach hib.log (the scrubber also blanks anything key-shaped).
+            HIB.Features.LogScrubber.AddSecret(core.Settings.EncryptionKey);
             var controller = new AppController(core, desktop);
             Controller = controller;
 
@@ -74,10 +77,24 @@ public partial class App : Application
             {
                 _tray?.Dispose();
                 core.Dispose();
+                HIB.Features.HibLog.Stop();
             };
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>%LOCALAPPDATA%\H.I.B\logs\hib.log (≤ 2 MB, one rotation): ADB, scrcpy and app diagnostics.</summary>
+    static void StartLogFile()
+    {
+        try
+        {
+            var log = HIB.Features.HibLog.Start();
+            var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?";
+            log.Write("app", $"H.I.B {version} started on {System.Runtime.InteropServices.RuntimeInformation.OSDescription} "
+                             + $"({System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}), .NET {Environment.Version}");
+        }
+        catch { }
     }
 
     void SetupTray(AppController controller)
@@ -94,9 +111,9 @@ public partial class App : Application
         var mirror = new NativeMenuItem("Mirror phone");
         mirror.Click += async (_, _) =>
         {
+            // The launcher connects ADB if needed and shows progress / the real reason it failed.
             if (controller.Features is not { } f) return;
-            if (!f.Adb.IsConnected) { controller.ShowMainWindow("phone"); return; }
-            if (await f.Mirror.StartMirrorAsync(f.DeviceNameForWindows) is null) controller.ShowMainWindow("phone");
+            await f.Launcher.MirrorAsync();
         };
         var camera = new NativeMenuItem("Open H.I.B Camera");
         camera.Click += (_, _) =>
