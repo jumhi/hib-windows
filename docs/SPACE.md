@@ -385,3 +385,50 @@ every connected computer when the Flick screen opens.
 - Live aim: the nearest saved screen of a **connected** computer within 35° (great-circle angle).
   None within 35° → target rule, nothing lit.
 - With only one screen in total, there is no setup and no aim: everything goes to that computer.
+
+## 8. ADB setup without a terminal (mirroring, Play here, apps)
+
+Mirroring needs the computer paired with the phone's Wireless debugging once. Finding the phone's
+pairing service by mDNS fails on many networks (different subnets, multicast blocked), which forced
+the user into PowerShell. The phone can always see its **own** services, so it tells the computer.
+
+### 8.1 `adbSetupState` P→D
+```json
+{"type":"adbSetupState","data":{"developerOptions":true,"wirelessDebugging":false,
+  "connectPort":42789,"pairingPort":null,"pairingName":null}}
+```
+- `developerOptions` = `Settings.Global.DEVELOPMENT_SETTINGS_ENABLED`, `wirelessDebugging` =
+  `Settings.Global "adb_wifi_enabled"`. `connectPort`: the phone's `_adb-tls-connect._tcp` port (NSD on
+  the phone). `pairingPort`/`pairingName`: the phone's `_adb-tls-pairing._tcp` service while a pairing
+  screen (QR scan or pairing code) is open on the phone, else null.
+- Sent after the handshake, whenever any field changes (ContentObserver on the two settings; NSD
+  callbacks), and in reply to `adbSetupRequest`. While a computer's setup is open (§8.2 `watch`), the
+  phone keeps NSD discovery of both service types running and reports changes within ~1 s.
+
+### 8.2 `adbSetupRequest` D→P
+```json
+{"type":"adbSetupRequest","data":{"open":"developer"|"wireless"|null,"watch":true}}
+```
+- `watch:true` starts the fast reporting of §8.1 for 5 min (renewed by each request); `watch:false` stops it.
+- `open:"developer"`: help the user turn on Developer options — open About phone → Software
+  information (Samsung) / About phone (others) and show "Tap Build number 7 times".
+- `open:"wireless"`: open Developer options with Wireless debugging highlighted
+  (`:settings:fragment_args_key` = `toggle_adb_wireless`).
+- If the app can't start an activity from the background, it posts a high-priority notification
+  ("Tap to open Wireless debugging") that opens it.
+
+### 8.3 Pairing on the computer (Windows and Mac)
+1. **Set up mirroring** card (instead of any silent failure or terminal instructions), driven by
+   `adbSetupState`:
+   - Developer options off → "Turn on Developer options" + **Show me on the phone** (`open:"developer"`).
+   - Wireless debugging off → "Turn on Wireless debugging" + **Open it on the phone** (`open:"wireless"`),
+     and "Allow on this network" when the phone asks.
+   - Not paired → a large pairing QR (`WIFI:T:ADB;S:<name>;P:<password>;;`) with "On your phone:
+     Wireless debugging → Pair device with QR code". When `adbSetupState.pairingName` equals `<name>`,
+     run `adb pair <phoneIp>:<pairingPort> <password>` at once — no mDNS.
+   - **Use a pairing code instead**: "Wireless debugging → Pair device with pairing code"; the port comes
+     from `pairingPort`, so the user only types the 6 digits.
+   - Paired → `adb connect <phoneIp>:<connectPort>` → "Mirroring is ready".
+2. `adb mdns services` stays only as a fallback when the phone doesn't send `adbSetupState` (old app).
+3. Always the bundled adb; never ask the user to install platform-tools or edit PATH.
+4. The Mirror / Desktop / app buttons open this card whenever ADB isn't ready, never a dead end.
