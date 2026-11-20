@@ -142,4 +142,34 @@ public class SpaceDirectory
 
     /// <summary>Starts/stops playing the phone's audio on this computer (SPACE.md §3.5).</summary>
     public virtual Task<bool> PlayHereAsync(bool on) => Task.FromResult(false);
+
+    // ---------------- additions (engine; safe defaults here) ----------------
+
+    /// <summary>This computer as a device (for the small "This PC" card). Route is always Unavailable.</summary>
+    public virtual SpaceDevice ThisDevice => new(ThisDeviceName, ThisDeviceName, SpaceDeviceKind.Windows, "Windows PC",
+        true, InUseId == ThisDeviceName, SpaceRoute.Unavailable, null, PlayingOn == ThisDeviceName);
+
+    /// <summary>Id of the computer in use right now (may be <see cref="ThisDeviceName"/>), or null.</summary>
+    public virtual string? InUseId => null;
+
+    /// <summary>True when the phone audio can be started here (phone linked over ADB, scrcpy present).</summary>
+    public virtual bool CanPlayHere => false;
+
+    /// <summary>True once the phone has given this computer the space key (direct links possible).</summary>
+    public virtual bool HasSpaceKey => false;
+
+    /// <summary>The device "Send to…" used last (target rule step 4), or null.</summary>
+    public virtual string? LastTargetId => null;
+
+    /// <summary>
+    /// Every incoming Flick (from the phone, from another computer through the phone, or over a
+    /// direct peer link). Raised on a background thread. Files then arrive on <c>HibCore.Files</c>.
+    /// </summary>
+    public event Action<FlickInfo>? FlickArrived;
+
+    /// <summary>Progress of every outgoing file (phone, relay or direct). Raised on a background thread.</summary>
+    public event Action<SendProgress>? SendProgress;
+
+    protected void RaiseFlickArrived(FlickInfo flick) => FlickArrived?.Invoke(flick);
+    protected void RaiseSendProgress(SendProgress progress) => SendProgress?.Invoke(progress);
 }

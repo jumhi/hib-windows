@@ -1,0 +1,378 @@
+// H.I.B Space (docs/SPACE.md §3.3): accepts and dials peer links, keeps one per computer.
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace HIB.Core.Space;
+
+public sealed class PeerNetworkOptions
+{
+    public TimeSpan PingInterval { get; set; } = TimeSpan.FromSeconds(10);
+    /// <summary>Drop a link after this long with no frames.</summary>
+    public TimeSpan DropAfter { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>Server side: a decryptable first frame must arrive within this (else close 4003).</summary>
+    public TimeSpan FirstFrameTimeout { get; set; } = TimeSpan.FromSeconds(5);
+    public TimeSpan HelloTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public TimeSpan ConnectTimeout { get; set; } = TimeSpan.FromSeconds(5);
+    /// <summary>Retry delays after failed dials: 5 s, 10 s, 20 s, … capped at 60 s.</summary>
+    public TimeSpan[] Backoff { get; set; } = { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(40), TimeSpan.FromSeconds(60) };
+    /// <summary>How often the dialler looks for peers without a link.</summary>
+    public TimeSpan DialTick { get; set; } = TimeSpan.FromSeconds(1);
+}
+
+/// <summary>
+/// The set of live peer links. Dials every known peer that has no link (all its IPs in parallel,
+/// the first to open wins), backs off on failure, answers the server side, and resolves duplicates:
+/// both computers keep the link whose client id sorts lower (UTF-8 bytes) and close the other with 4009.
+/// </summary>
+public sealed class PeerNetwork : IDisposable
+{
+    sealed class DialState
+    {
+        public int Failures;
+        public DateTime NextAttempt = DateTime.MinValue;
+        public bool InFlight;
+    }
+
+    readonly Func<byte[]?> _key;
+    readonly Func<PeerHello> _ownHello;
+    readonly Func<IEnumerable<KnownPeer>> _known;
+    readonly PeerNetworkOptions _options;
+    readonly object _gate = new();
+    readonly Dictionary<string, PeerLink> _active = new(StringComparer.Ordinal);
+    readonly HashSet<PeerLink> _all = new();
+    readonly Dictionary<string, DialState> _dial = new(StringComparer.Ordinal);
+    CancellationTokenSource? _cts;
+
+    public PeerNetwork(Func<byte[]?> key, Func<PeerHello> ownHello, Func<IEnumerable<KnownPeer>> known, PeerNetworkOptions? options = null)
+    {
+        _key = key;
+        _ownHello = ownHello;
+        _known = known;
+        _options = options ?? new PeerNetworkOptions();
+    }
+
+    public PeerNetworkOptions Options => _options;
+
+    /// <summary>A link to a computer came up (after the hello, duplicates already resolved).</summary>
+    public event Action<PeerLink>? LinkUp;
+    /// <summary>The active link to a computer went away (not raised for duplicates that lost the tie-break).</summary>
+    public event Action<PeerLink>? LinkDown;
+    /// <summary>Every completed hello, with the address it came from (to remember the peer).</summary>
+    public event Action<PeerLink>? HelloReceived;
+    /// <summary>peerActivity arrived on an active link.</summary>
+    public event Action<PeerLink>? ActivityChanged;
+    public event Action<string>? Log;
+
+    public bool Running => _cts is not null;
+
+    /// <summary>The live link per peer id.</summary>
+    public IReadOnlyList<PeerLink> Links { get { lock (_gate) return _active.Values.Where(l => l.IsOpen).ToList(); } }
+
+    public PeerLink? Get(string id)
+    {
+        lock (_gate) return _active.TryGetValue(id, out var l) && l.IsOpen ? l : null;
+    }
+
+    public bool IsLinked(string id) => Get(id) is not null;
+
+    public void Start()
+    {
+        if (_cts is not null) return;
+        _cts = new CancellationTokenSource();
+        _ = DialLoopAsync(_cts.Token);
+        _ = KeepAliveLoopAsync(_cts.Token);
+    }
+
+    public void Stop()
+    {
+        var cts = Interlocked.Exchange(ref _cts, null);
+        cts?.Cancel();
+        DropAll("Stopping");
+    }
+
+    public void Dispose() => Stop();
+
+    /// <summary>Closes every link (the space key changed, or the app is quitting).</summary>
+    public void DropAll(string reason)
+    {
+        List<PeerLink> all;
+        lock (_gate) all = _all.ToList();
+        foreach (var l in all) _ = l.CloseAsync(1000, reason);
+    }
+
+    /// <summary>Retry now: a desktopsList or peerHello came in (SPACE.md: resets the backoff).</summary>
+    public void ResetBackoff(string? id = null)
+    {
+        lock (_gate)
+        {
+            foreach (var (peer, st) in _dial)
+            {
+                if (id is not null && !SpaceIds.Same(peer, id)) continue;
+                st.Failures = 0;
+                st.NextAttempt = DateTime.MinValue;
+            }
+        }
+    }
+
+    // ---------------- server side ----------------
+
+    /// <summary>Runs one accepted <c>/peer</c> session (LinkServer.PeerHandler).</summary>
+    public async Task HandleIncomingAsync(WebSocket ws, TcpClient client, string remoteIp, CancellationToken ct)
+    {
+        var key = _key();
+        if (key is null || _cts is null)
+        {
+            try { await ws.CloseOutputAsync((WebSocketCloseStatus)PeerLink.CloseDecryptFailed, "No space key", CancellationToken.None).ConfigureAwait(false); } catch { }
+            return;
+        }
+        var link = Create(ws, client, key, isClient: false, remoteIp);
+        await link.RunAsync(_options.FirstFrameTimeout, _options.HelloTimeout, ct).ConfigureAwait(false);
+    }
+
+    PeerLink Create(WebSocket ws, IDisposable? owner, byte[] key, bool isClient, string remoteIp)
+    {
+        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp) { Log = WriteLog };
+        lock (_gate) _all.Add(link);
+        link.HelloCompleted += OnHello;
+        link.Closed += OnClosed;
+        link.ActivityChanged += l =>
+        {
+            if (Get(l.PeerId) == l) ActivityChanged?.Invoke(l);
+        };
+        return link;
+    }
+
+    void OnHello(PeerLink link)
+    {
+        try { HelloReceived?.Invoke(link); } catch { }
+        PeerLink? loser = null;
+        var won = false;
+        lock (_gate)
+        {
+            if (_active.TryGetValue(link.PeerId, out var existing) && !ReferenceEquals(existing, link) && existing.IsOpen)
+            {
+                if (KeepFirst(link, existing))
+                {
+                    _active[link.PeerId] = link;
+                    loser = existing;
+                    won = true;
+                }
+                else
+                {
+                    loser = link;
+                }
+            }
+            else
+            {
+                _active[link.PeerId] = link;
+                won = true;
+            }
+            if (won && _dial.TryGetValue(link.PeerId, out var st))
+            {
+                st.Failures = 0;
+                st.NextAttempt = DateTime.MinValue;
+            }
+        }
+        if (loser is not null)
+        {
+            WriteLog($"Peer {link.PeerName}: duplicate link closed (4009)");
+            _ = loser.CloseAsync(PeerLink.CloseDuplicate, "duplicate");
+        }
+        if (won)
+        {
+            WriteLog($"Peer link up: {link}");
+            try { LinkUp?.Invoke(link); } catch (Exception ex) { WriteLog("LinkUp handler: " + ex.Message); }
+        }
+    }
+
+    /// <summary>
+    /// SPACE.md §3.3 duplicates: keep the link whose client id sorts lower (UTF-8 bytes). Two links dialled
+    /// by the same side (a redial while a dead link lingers) keep the newer one.
+    /// </summary>
+    public static bool KeepFirst(PeerLink candidate, PeerLink existing)
+    {
+        var c = SpaceIds.Compare(candidate.ClientId, existing.ClientId);
+        if (c != 0) return c < 0;
+        return candidate.OpenedAt >= existing.OpenedAt;
+    }
+
+    /// <summary>The tie-break on ids alone: true when the link dialled by <paramref name="clientA"/> survives.</summary>
+    public static bool KeepsLinkDialledBy(string clientA, string clientB) => SpaceIds.Compare(clientA, clientB) <= 0;
+
+    void OnClosed(PeerLink link)
+    {
+        var wasActive = false;
+        lock (_gate)
+        {
+            _all.Remove(link);
+            if (link.PeerId.Length > 0 && _active.TryGetValue(link.PeerId, out var cur) && ReferenceEquals(cur, link))
+            {
+                _active.Remove(link.PeerId);
+                wasActive = true;
+                if (_dial.TryGetValue(link.PeerId, out var st)) st.NextAttempt = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+            }
+        }
+        if (wasActive)
+        {
+            WriteLog($"Peer link down: {link} ({link.CloseCode})");
+            try { LinkDown?.Invoke(link); } catch { }
+        }
+    }
+
+    // ---------------- dialling ----------------
+
+    async Task DialLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(_options.DialTick, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return; }
+            if (_key() is null) continue;
+            var own = _ownHello().Id;
+            foreach (var peer in _known())
+            {
+                if (SpaceIds.Same(peer.Id, own) || peer.Port <= 0 || peer.Ips.Count == 0) continue;
+                DialState st;
+                lock (_gate)
+                {
+                    if (_active.TryGetValue(peer.Id, out var l) && l.IsOpen) continue;
+                    if (!_dial.TryGetValue(peer.Id, out st!)) _dial[peer.Id] = st = new DialState();
+                    if (st.InFlight || DateTime.UtcNow < st.NextAttempt) continue;
+                    st.InFlight = true;
+                }
+                _ = DialAsync(peer, st, ct);
+            }
+        }
+    }
+
+    async Task DialAsync(KnownPeer peer, DialState st, CancellationToken ct)
+    {
+        var ok = false;
+        try
+        {
+            ok = await DialOnceAsync(peer, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) { WriteLog($"Dial {peer.Name}: {ex.Message}"); }
+        finally
+        {
+            lock (_gate)
+            {
+                st.InFlight = false;
+                if (!ok)
+                {
+                    var delay = _options.Backoff[Math.Min(st.Failures, _options.Backoff.Length - 1)];
+                    st.Failures++;
+                    st.NextAttempt = DateTime.UtcNow + delay;
+                }
+            }
+        }
+    }
+
+    /// <summary>Tries every IP in parallel; keeps the first socket that opens and says hello.</summary>
+    async Task<bool> DialOnceAsync(KnownPeer peer, CancellationToken ct)
+    {
+        var key = _key();
+        if (key is null) return false;
+        using var race = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        race.CancelAfter(_options.ConnectTimeout);
+        var attempts = peer.Ips.Distinct().Select(ip => ConnectAsync(ip, peer.Port, race.Token)).ToList();
+        ClientWebSocket? winner = null;
+        string? winnerIp = null;
+        while (attempts.Count > 0)
+        {
+            var done = await Task.WhenAny(attempts).ConfigureAwait(false);
+            attempts.Remove(done);
+            var (ws, ip) = await done.ConfigureAwait(false);
+            if (ws is null) continue;
+            if (winner is null)
+            {
+                winner = ws;
+                winnerIp = ip;
+                race.Cancel(); // the others give up
+            }
+            else
+            {
+                ws.Dispose();
+            }
+        }
+        if (winner is null) return false;
+
+        lock (_gate)
+        {
+            // A server-side link may have come up while we dialled: no need for a second one.
+            if (_active.TryGetValue(peer.Id, out var l) && l.IsOpen)
+            {
+                winner.Dispose();
+                return true;
+            }
+        }
+        var link = Create(winner, winner, key, isClient: true, winnerIp!);
+        var helloDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        link.HelloCompleted += _ => helloDone.TrySetResult(true);
+        link.Closed += _ => helloDone.TrySetResult(false);
+        _ = Task.Run(() => link.RunAsync(_options.FirstFrameTimeout, _options.HelloTimeout, _cts?.Token ?? CancellationToken.None), CancellationToken.None);
+        if (!await link.SendHelloAsync().ConfigureAwait(false))
+        {
+            await link.CloseAsync(1000, "").ConfigureAwait(false);
+            return false;
+        }
+        return await helloDone.Task.ConfigureAwait(false);
+    }
+
+    async Task<(ClientWebSocket? ws, string ip)> ConnectAsync(string ip, int port, CancellationToken ct)
+    {
+        var ws = new ClientWebSocket();
+        ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        try
+        {
+            var host = IPAddress.TryParse(ip, out var addr) && addr.AddressFamily == AddressFamily.InterNetworkV6 ? $"[{ip}]" : ip;
+            await ws.ConnectAsync(new Uri($"ws://{host}:{port}/peer"), ct).ConfigureAwait(false);
+            return (ws, ip);
+        }
+        catch
+        {
+            ws.Dispose();
+            return (null, ip);
+        }
+    }
+
+    // ---------------- keepalive ----------------
+
+    async Task KeepAliveLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(_options.PingInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                List<PeerLink> links;
+                lock (_gate) links = _all.ToList();
+                var now = DateTime.UtcNow;
+                foreach (var l in links)
+                {
+                    if (now - l.LastActivity > _options.DropAfter)
+                    {
+                        WriteLog($"Peer {l.PeerName}: silent for {(now - l.LastActivity).TotalSeconds:0}s — dropping");
+                        _ = l.CloseAsync(1001, "timeout");
+                    }
+                    else if (l.IsOpen)
+                    {
+                        _ = l.SendAsync("ping");
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    void WriteLog(string line)
+    {
+        try { Log?.Invoke(line); } catch { }
+    }
+}

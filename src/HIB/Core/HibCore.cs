@@ -20,6 +20,8 @@ public sealed class HibCoreOptions
     public Func<string> DownloadsDir { get; set; } = () => AppPaths.DownloadsDir;
     public TimeSpan? PingInterval { get; set; }
     public TimeSpan? ActivityTimeout { get; set; }
+    /// <summary>Peer link, activity and Flick-to-phone settings (SPACE.md).</summary>
+    public HIB.Core.Space.SpaceOptions Space { get; set; } = new();
 
     static bool DiscoveryDefault()
     {
@@ -60,7 +62,12 @@ public sealed class HibCore : IDisposable
         Sender = new FileSender(Link);
         Sender.Log += AddLog;
         Ecosystem = new PhoneEcosystem(Link);
-        Space = new HIB.Core.Space.SpaceDirectory(Link, Ecosystem, Sender);
+        var space = new HIB.Core.Space.SpaceEngine(Link, Ecosystem, Sender, Files, Hub, Options.DataDir, Options.Space)
+        {
+            RememberedPhoneName = () => Settings.LastPhoneName,
+        };
+        space.Log += AddLog;
+        Space = space;
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Link.ConnectionChanged += (_, connected) =>
         {
@@ -108,9 +115,13 @@ public sealed class HibCore : IDisposable
         Clipboard.Start();
     }
 
+    /// <summary>The Space engine behind <see cref="Space"/> (peer links, activity, Flick routing).</summary>
+    public HIB.Core.Space.SpaceEngine SpaceEngine => (HIB.Core.Space.SpaceEngine)Space;
+
     public void Start()
     {
         Link.Start();
+        SpaceEngine.Start();
         if (Options.EnableDiscovery && Settings.Discovery) StartDiscovery();
     }
 
@@ -174,6 +185,7 @@ public sealed class HibCore : IDisposable
         Clipboard?.Dispose();
         Udp?.Dispose();
         Mdns?.Dispose();
+        SpaceEngine.Dispose();
         Link.Dispose();
     }
 }

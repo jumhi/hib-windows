@@ -24,9 +24,10 @@ public sealed class TestHost : IAsyncDisposable
 {
     static int _nextPort = int.TryParse(Environment.GetEnvironmentVariable("HIB_PORT"), out var p) ? p : 16996;
 
-    public TestHost(TimeSpan? pingInterval = null, TimeSpan? activityTimeout = null)
+    public TestHost(TimeSpan? pingInterval = null, TimeSpan? activityTimeout = null, string? name = null,
+        HIB.Core.Space.SpaceOptions? space = null, string? root = null)
     {
-        Root = Path.Combine(Path.GetTempPath(), "hib-tests", Guid.NewGuid().ToString("N")[..8]);
+        Root = root ?? Path.Combine(Path.GetTempPath(), "hib-tests", Guid.NewGuid().ToString("N")[..8]);
         Downloads = Path.Combine(Root, "Downloads");
         Directory.CreateDirectory(Downloads);
         var port = NextFreePort();
@@ -38,8 +39,9 @@ public sealed class TestHost : IAsyncDisposable
             DownloadsDir = () => Downloads,
             PingInterval = pingInterval,
             ActivityTimeout = activityTimeout,
+            Space = space ?? new HIB.Core.Space.SpaceOptions(),
         });
-        Core.Settings.DesktopName = "Haitham’s PC & Co?=x+y";
+        Core.Settings.DesktopName = name ?? "Haitham’s PC & Co?=x+y";
         Core.Settings.Save();
         Clipboard = new FakeClipboard();
         Core.AttachClipboard(Clipboard, TimeSpan.FromMilliseconds(200));
@@ -79,10 +81,13 @@ public sealed class TestHost : IAsyncDisposable
         return phone;
     }
 
+    /// <summary>Keep the data folder on dispose (to restart a core on it).</summary>
+    public bool KeepRoot { get; set; }
+
     public ValueTask DisposeAsync()
     {
         Core.Dispose();
-        try { Directory.Delete(Root, true); } catch { }
+        if (!KeepRoot) try { Directory.Delete(Root, true); } catch { }
         return ValueTask.CompletedTask;
     }
 }
