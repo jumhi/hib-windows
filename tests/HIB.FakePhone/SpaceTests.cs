@@ -188,13 +188,15 @@ public class SpaceTests
         Assert.True(SpaceIds.Compare("😀", "�") > 0);
         Assert.True(PeerNetwork.KeepsLinkDialledBy("A PC", "B PC"));
         Assert.False(PeerNetwork.KeepsLinkDialledBy("B PC", "A PC"));
+        Assert.False(PeerNetwork.KeepsLinkDialledBy("A PC", "A PC")); // same client: the existing link stays
+        Assert.True(SpaceIds.Same("Office PC", "office pc"));         // "same computer" ignores case, like the Mac
     }
 
     [Fact]
     public void Text_kind_detects_links()
     {
         Assert.Equal("link", SpaceIds.TextKind("https://example.com/a?b=c"));
-        Assert.Equal("link", SpaceIds.TextKind("www.example.com"));
+        Assert.Equal("text", SpaceIds.TextKind("www.example.com")); // like the Mac: only a whole http(s) URL
         Assert.Equal("text", SpaceIds.TextKind("meet at 7"));
         Assert.Equal("text", SpaceIds.TextKind("see https://example.com now"));
     }
@@ -266,35 +268,72 @@ public class SpaceTests
         Assert.Contains("127.0.0.1", b.Core.SpaceEngine.KnownPeers.Single(p => p.Id == "A PC").Ips);
     }
 
+    /// <summary>Dials <paramref name="port"/>/peer as <paramref name="id"/>; returns (got a peerHello, close code).</summary>
+    static async Task<(bool hello, int? close, ClientWebSocket ws)> RawDialAsync(int port, string id, bool waitForClose)
+    {
+        var ws = new ClientWebSocket();
+        await ws.ConnectAsync(new Uri($"ws://127.0.0.1:{port}/peer"), TestContext.Current.CancellationToken);
+        var hello = LinkServer.BuildEnvelope("peerHello", new { id, name = id, platform = "mac", type = "MacBook Pro", port = 1, ips = new[] { "127.0.0.1" }, v = 1 });
+        await ws.SendAsync(Encoding.UTF8.GetBytes(LinkCrypto.Encrypt(hello, SpaceKey)), WebSocketMessageType.Text, true, TestContext.Current.CancellationToken);
+        var buf = new byte[64 * 1024];
+        var gotHello = false;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (true)
+        {
+            var r = await ws.ReceiveAsync(buf, cts.Token);
+            if (r.MessageType == WebSocketMessageType.Close) return (gotHello, (int?)r.CloseStatus, ws);
+            var plain = LinkCrypto.TryDecrypt(Encoding.UTF8.GetString(buf, 0, r.Count), SpaceKey);
+            if (plain?.Contains("\"peerHello\"") == true)
+            {
+                gotHello = true;
+                if (!waitForClose) return (true, null, ws);
+            }
+        }
+    }
+
     [Fact]
-    public async Task Duplicate_link_is_closed_with_4009_and_the_lower_client_id_wins()
+    public async Task Losing_duplicate_is_closed_with_4009_and_never_gets_a_hello()
     {
         var (a, b) = await TwoLinkedComputersAsync();
         await using var _a = a;
         await using var _b = b;
-        await Task.Delay(500);
         var keep = Assert.Single(a.Core.SpaceEngine.PeerLinks);
+        Assert.Equal("A PC", keep.ClientId);
 
-        // B (the higher id) dials A again by hand: A must close that one with 4009 and keep the original.
-        using var ws = new ClientWebSocket();
-        await ws.ConnectAsync(new Uri($"ws://127.0.0.1:{a.Core.Link.Port}/peer"), TestContext.Current.CancellationToken);
-        var hello = LinkServer.BuildEnvelope("peerHello", new { id = "B Mac", name = "B Mac", platform = "mac", type = "MacBook Pro", port = b.Core.Link.Port, ips = new[] { "127.0.0.1" }, v = 1 });
-        await ws.SendAsync(Encoding.UTF8.GetBytes(LinkCrypto.Encrypt(hello, SpaceKey)), WebSocketMessageType.Text, true, TestContext.Current.CancellationToken);
-        var buf = new byte[64 * 1024];
-        WebSocketReceiveResult r;
-        var gotHello = false;
-        do
-        {
-            r = await ws.ReceiveAsync(buf, TestContext.Current.CancellationToken);
-            if (r.MessageType == WebSocketMessageType.Text)
-            {
-                var plain = LinkCrypto.TryDecrypt(Encoding.UTF8.GetString(buf, 0, r.Count), SpaceKey);
-                if (plain?.Contains("\"peerHello\"") == true) gotHello = true;
-            }
-        } while (r.MessageType != WebSocketMessageType.Close);
-        Assert.True(gotHello);
-        Assert.Equal(4009, (int)r.CloseStatus!.Value);
+        // B (the higher id) dials A again: the link dialled by "A PC" sorts lower and stays.
+        var (hello, close, ws) = await RawDialAsync(a.Core.Link.Port, "B Mac", waitForClose: true);
+        ws.Dispose();
+        Assert.False(hello);
+        Assert.Equal(4009, close);
         Assert.Same(keep, Assert.Single(a.Core.SpaceEngine.PeerLinks));
+
+        // A second link from the same client ("A PC" dialling B again): B keeps the existing one.
+        (hello, close, ws) = await RawDialAsync(b.Core.Link.Port, "A PC", waitForClose: true);
+        ws.Dispose();
+        Assert.False(hello);
+        Assert.Equal(4009, close);
+        Assert.True(Assert.Single(b.Core.SpaceEngine.PeerLinks).IsOpen);
+    }
+
+    [Fact]
+    public async Task A_lower_client_id_replaces_the_existing_link()
+    {
+        await using var a = new TestHost(name: "A PC", space: FastSpace());
+        await using var b = new TestHost(name: "B Mac", space: FastSpace());
+        a.Core.SpaceEngine.SetSpaceKey(SpaceKey);
+        b.Core.SpaceEngine.SetSpaceKey(SpaceKey);
+        // Only B knows A, so B (the higher id) dials after its polite delay.
+        b.Core.SpaceEngine.RememberPeer("A PC", "A PC", "windows", new[] { "127.0.0.1" }, a.Core.Link.Port);
+        Assert.True(await Eventually.TrueAsync(() => b.Core.SpaceEngine.PeerLinks.Count == 1, TimeSpan.FromSeconds(8)));
+        var old = b.Core.SpaceEngine.PeerLinks[0];
+        Assert.Equal("B Mac", old.ClientId);
+
+        // "A PC" dials B: its client id sorts lower, so B answers with a hello and closes the old link with 4009.
+        var (hello, _, ws) = await RawDialAsync(b.Core.Link.Port, "A PC", waitForClose: false);
+        using var _ws = ws;
+        Assert.True(hello);
+        Assert.True(await Eventually.TrueAsync(() => old.CloseCode == 4009));
+        Assert.Equal("A PC", Assert.Single(b.Core.SpaceEngine.PeerLinks).ClientId);
     }
 
     [Fact]
@@ -370,7 +409,7 @@ public class SpaceTests
             Assert.Equal("link", flicks[1].Kind);
             Assert.Equal("https://example.com/hib", flicks[1].Text);
         }
-        // Text can't go through the phone (no relay for it): false when there is no direct link.
+        // Nobody to reach it through: false.
         Assert.False(await a.Core.Space.SendTextAsync("Nowhere", "x"));
     }
 
@@ -471,6 +510,18 @@ public class SpaceTests
         Assert.True(await host.Core.Space.SendTextAsync("phone", "Copied words"));
         m = await phone.WaitForAsync("flickStart");
         Assert.Equal("text", m.Data.Str("kind"));
+    }
+
+    [Fact]
+    public async Task Text_for_a_computer_without_a_direct_link_goes_through_the_phone_clipboard()
+    {
+        await using var host = new TestHost(name: "Office PC", space: FastSpace());
+        await using var phone = await host.ConnectPhoneAsync();
+        await phone.SendAsync("desktopsList", DesktopsList("Office PC", null, null, null, Desk("Haitham’s MacBook", "mac", true)));
+        Assert.True(await Eventually.TrueAsync(() => host.Core.Space.Find("Haitham’s MacBook")?.Route == SpaceRoute.ViaPhone));
+        Assert.True(await host.Core.Space.SendTextAsync("Haitham’s MacBook", "the wifi password is hunter2"));
+        var m = await phone.WaitForAsync("clipboardUpdate");
+        Assert.Equal("the wifi password is hunter2", m.Data.Str("text"));
     }
 
     [Fact]

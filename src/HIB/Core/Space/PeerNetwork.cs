@@ -23,6 +23,11 @@ public sealed class PeerNetworkOptions
     public TimeSpan[] Backoff { get; set; } = { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(40), TimeSpan.FromSeconds(60) };
     /// <summary>How often the dialler looks for peers without a link.</summary>
     public TimeSpan DialTick { get; set; } = TimeSpan.FromSeconds(1);
+    /// <summary>
+    /// The computer whose id sorts higher waits this long before dialling, so usually only one link opens
+    /// (the Mac does the same; the duplicate rule still settles it if both dial).
+    /// </summary>
+    public TimeSpan PoliteDelay { get; set; } = TimeSpan.FromSeconds(1.5);
 }
 
 /// <summary>
@@ -109,16 +114,21 @@ public sealed class PeerNetwork : IDisposable
     /// <summary>Retry now: a desktopsList or peerHello came in (SPACE.md: resets the backoff).</summary>
     public void ResetBackoff(string? id = null)
     {
+        var own = _ownHello().Id;
         lock (_gate)
         {
             foreach (var (peer, st) in _dial)
             {
                 if (id is not null && !SpaceIds.Same(peer, id)) continue;
                 st.Failures = 0;
-                st.NextAttempt = DateTime.MinValue;
+                st.NextAttempt = FirstAttempt(own, peer);
             }
         }
     }
+
+    /// <summary>Now for the lower id; the higher id waits <see cref="PeerNetworkOptions.PoliteDelay"/>.</summary>
+    DateTime FirstAttempt(string own, string peer)
+        => SpaceIds.Compare(own, peer) > 0 ? DateTime.UtcNow + _options.PoliteDelay : DateTime.MinValue;
 
     // ---------------- server side ----------------
 
@@ -137,7 +147,7 @@ public sealed class PeerNetwork : IDisposable
 
     PeerLink Create(WebSocket ws, IDisposable? owner, byte[] key, bool isClient, string remoteIp)
     {
-        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp) { Log = WriteLog };
+        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp) { Log = WriteLog, Admit = AdmitLink };
         lock (_gate) _all.Add(link);
         link.HelloCompleted += OnHello;
         link.Closed += OnClosed;
@@ -148,62 +158,55 @@ public sealed class PeerNetwork : IDisposable
         return link;
     }
 
-    void OnHello(PeerLink link)
+    /// <summary>
+    /// The first hello on a link: keep it or not (SPACE.md §3.3, the Mac's PeerDedup). Runs before a server
+    /// replies with its own hello, so a losing duplicate is closed with 4009 and never hears from us.
+    /// </summary>
+    bool AdmitLink(PeerLink link)
     {
         try { HelloReceived?.Invoke(link); } catch { }
-        PeerLink? loser = null;
-        var won = false;
         lock (_gate)
         {
-            if (_active.TryGetValue(link.PeerId, out var existing) && !ReferenceEquals(existing, link) && existing.IsOpen)
+            if (_active.TryGetValue(link.PeerId, out var existing) && !ReferenceEquals(existing, link) && existing.IsAlive)
             {
-                if (KeepFirst(link, existing))
+                if (!KeepFirst(link, existing))
                 {
-                    _active[link.PeerId] = link;
-                    loser = existing;
-                    won = true;
+                    WriteLog($"Peer {link.PeerName}: duplicate link closed (4009)");
+                    return false;
                 }
-                else
-                {
-                    loser = link;
-                }
+                link.Replaced = existing;
             }
-            else
-            {
-                _active[link.PeerId] = link;
-                won = true;
-            }
-            if (won && _dial.TryGetValue(link.PeerId, out var st))
+            _active[link.PeerId] = link;
+            if (_dial.TryGetValue(link.PeerId, out var st))
             {
                 st.Failures = 0;
                 st.NextAttempt = DateTime.MinValue;
             }
+            return true;
         }
-        if (loser is not null)
+    }
+
+    /// <summary>The kept link finished its hello: retire the one it replaced and announce it.</summary>
+    void OnHello(PeerLink link)
+    {
+        if (Interlocked.Exchange(ref link.Replaced, null) is { } loser)
         {
             WriteLog($"Peer {link.PeerName}: duplicate link closed (4009)");
             _ = loser.CloseAsync(PeerLink.CloseDuplicate, "duplicate");
         }
-        if (won)
-        {
-            WriteLog($"Peer link up: {link}");
-            try { LinkUp?.Invoke(link); } catch (Exception ex) { WriteLog("LinkUp handler: " + ex.Message); }
-        }
+        WriteLog($"Peer link up: {link}");
+        try { LinkUp?.Invoke(link); } catch (Exception ex) { WriteLog("LinkUp handler: " + ex.Message); }
     }
 
     /// <summary>
-    /// SPACE.md §3.3 duplicates: keep the link whose client id sorts lower (UTF-8 bytes). Two links dialled
-    /// by the same side (a redial while a dead link lingers) keep the newer one.
+    /// SPACE.md §3.3 duplicates, exactly like the Mac's PeerDedup.resolve: keep the link whose client id sorts
+    /// lower (UTF-8 bytes); two links from the same client (parallel IP dials, a redial) keep the existing one.
     /// </summary>
     public static bool KeepFirst(PeerLink candidate, PeerLink existing)
-    {
-        var c = SpaceIds.Compare(candidate.ClientId, existing.ClientId);
-        if (c != 0) return c < 0;
-        return candidate.OpenedAt >= existing.OpenedAt;
-    }
+        => SpaceIds.Compare(candidate.ClientId, existing.ClientId) < 0;
 
     /// <summary>The tie-break on ids alone: true when the link dialled by <paramref name="clientA"/> survives.</summary>
-    public static bool KeepsLinkDialledBy(string clientA, string clientB) => SpaceIds.Compare(clientA, clientB) <= 0;
+    public static bool KeepsLinkDialledBy(string clientA, string clientB) => SpaceIds.Compare(clientA, clientB) < 0;
 
     void OnClosed(PeerLink link)
     {
@@ -214,8 +217,9 @@ public sealed class PeerNetwork : IDisposable
             if (link.PeerId.Length > 0 && _active.TryGetValue(link.PeerId, out var cur) && ReferenceEquals(cur, link))
             {
                 _active.Remove(link.PeerId);
-                wasActive = true;
-                if (_dial.TryGetValue(link.PeerId, out var st)) st.NextAttempt = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+                wasActive = link.WasUp;
+                if (_dial.TryGetValue(link.PeerId, out var st))
+                    st.NextAttempt = DateTime.UtcNow + TimeSpan.FromSeconds(1) + (SpaceIds.Compare(_ownHello().Id, link.PeerId) > 0 ? _options.PoliteDelay : TimeSpan.Zero);
             }
         }
         if (wasActive)
@@ -241,8 +245,8 @@ public sealed class PeerNetwork : IDisposable
                 DialState st;
                 lock (_gate)
                 {
-                    if (_active.TryGetValue(peer.Id, out var l) && l.IsOpen) continue;
-                    if (!_dial.TryGetValue(peer.Id, out st!)) _dial[peer.Id] = st = new DialState();
+                    if (_active.TryGetValue(peer.Id, out var l) && l.IsAlive) continue;
+                    if (!_dial.TryGetValue(peer.Id, out st!)) _dial[peer.Id] = st = new DialState { NextAttempt = FirstAttempt(own, peer.Id) };
                     if (st.InFlight || DateTime.UtcNow < st.NextAttempt) continue;
                     st.InFlight = true;
                 }

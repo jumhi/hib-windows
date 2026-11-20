@@ -1,5 +1,6 @@
 // H.I.B Space (docs/SPACE.md §2): identity helpers shared by the directory and the peer link.
 using System;
+using System.Linq;
 using System.Text;
 
 namespace HIB.Core.Space;
@@ -31,7 +32,9 @@ public static class SpaceIds
         return x.Length.CompareTo(y.Length);
     }
 
-    public static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.Ordinal);
+    /// <summary>The same computer: names compare case-insensitively, like the phone and the Mac do.</summary>
+    public static bool Same(string? a, string? b)
+        => !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     public static SpaceDeviceKind KindFor(string? platform)
         => (platform ?? "").Trim().ToLowerInvariant() switch
@@ -57,13 +60,12 @@ public static class SpaceIds
         return "file";
     }
 
-    /// <summary>"link" when the text is a single http(s)/www address, otherwise "text".</summary>
+    /// <summary>"link" when the whole text is one http(s) URL (like the Mac's FlickPayload.textKind), else "text".</summary>
     public static string TextKind(string text)
     {
         var t = text.Trim();
-        if (t.Length == 0 || t.Length > 4096 || t.Contains(' ') || t.Contains('\n')) return "text";
-        if (Uri.TryCreate(t, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps)) return "link";
-        if (t.StartsWith("www.", StringComparison.OrdinalIgnoreCase) && t.IndexOf('.', 4) > 4) return "link";
-        return "text";
+        if (t.Length == 0 || t.Any(char.IsWhiteSpace)) return "text";
+        if (Uri.TryCreate(t, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps) && u.Host.Length > 0) return "link";
+        return "text"; // like the Mac: only a whole http(s) URL is a link
     }
 }

@@ -601,6 +601,8 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         if (deviceId == SpaceIds.Phone)
         {
             ok = Link.IsConnected && await Link.SendAsync("flickStart", data).ConfigureAwait(false);
+            // Phones without the Space update ignore flickStart: the shared clipboard still gets it there (like the Mac).
+            if (ok && !ListState.HasInUse) await Link.SendAsync("clipboardUpdate", new { text }).ConfigureAwait(false);
         }
         else if (_net.Get(deviceId) is { } link)
         {
@@ -609,9 +611,14 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
             data["angle"] = 0.0;
             ok = await link.SendAsync("flickStart", data).ConfigureAwait(false);
         }
+        else if (PhoneRelays(deviceId))
+        {
+            // No direct link: the phone shares the clipboard with every computer (§6.22), as the Mac does.
+            ok = await Link.SendAsync("clipboardUpdate", new { text }).ConfigureAwait(false);
+        }
         else
         {
-            ok = false; // §6.22 relays files only: text needs the direct link
+            ok = false;
         }
         if (ok) _peers.LastTarget = deviceId;
         return ok;

@@ -78,7 +78,13 @@ public sealed class PeerLink : ILinkSession, IDisposable
     public string ClientId => IsClient ? _own.Id : PeerId;
 
     public DateTime LastActivity => new(Interlocked.Read(ref _lastActivityTicks), DateTimeKind.Utc);
-    public bool IsOpen => _helloDone && Volatile.Read(ref _closed) == 0 && _ws.State == WebSocketState.Open;
+    public bool IsOpen => _helloDone && IsAlive;
+
+    /// <summary>Not closed (it may still be finishing its hello).</summary>
+    public bool IsAlive => Volatile.Read(ref _closed) == 0 && _ws.State == WebSocketState.Open;
+
+    /// <summary>True once this link completed its hello and was kept (it was "up").</summary>
+    public bool WasUp => _helloDone;
 
     /// <summary>The close code we sent or received, once closed.</summary>
     public int? CloseCode { get; private set; }
@@ -102,6 +108,10 @@ public sealed class PeerLink : ILinkSession, IDisposable
     public event EventHandler<PhoneDeviceInfo>? DeviceUpdated { add { } remove { } }
 
     internal event Action<PeerLink>? HelloCompleted;
+    /// <summary>Decides, when the first hello arrives, whether this link is kept (false → closed 4009).</summary>
+    internal Func<PeerLink, bool>? Admit;
+    /// <summary>The link this one replaced (closed with 4009 once this one is up).</summary>
+    internal PeerLink? Replaced;
     internal event Action<PeerLink>? ActivityChanged;
     internal event Action<PeerLink>? Closed;
     internal Action<string>? Log;
@@ -221,19 +231,23 @@ public sealed class PeerLink : ILinkSession, IDisposable
                     await CloseAsync(1008, "That's me").ConfigureAwait(false);
                     return;
                 }
-                if (_helloDone && Hello is not null && !SpaceIds.Same(Hello.Id, hello.Id))
+                if (_helloDone)
                 {
-                    await CloseAsync(1008, "Id changed").ConfigureAwait(false);
+                    // A live link re-announcing itself (new IPs or name).
+                    if (Hello is not null && !SpaceIds.Same(Hello.Id, hello.Id)) await CloseAsync(1008, "Id changed").ConfigureAwait(false);
+                    else Hello = hello;
                     return;
                 }
-                var first = !_helloDone;
                 Hello = hello;
-                if (first && !IsClient && !await SendHelloAsync().ConfigureAwait(false)) return;
-                if (first)
+                // Duplicate rule first: a losing link is closed with 4009 and never gets our hello.
+                if (Admit?.Invoke(this) == false)
                 {
-                    _helloDone = true;
-                    HelloCompleted?.Invoke(this);
+                    await CloseAsync(CloseDuplicate, "duplicate").ConfigureAwait(false);
+                    return;
                 }
+                if (!IsClient && !await SendHelloAsync().ConfigureAwait(false)) return;
+                _helloDone = true;
+                HelloCompleted?.Invoke(this);
                 return;
             case "ping":
                 if (_helloDone) _ = SendAsync("pong");
