@@ -474,6 +474,13 @@ Everything travels over the existing authenticated **peer link** (§3.3) — no 
 - The shared edge is the outer edge of each computer's whole desktop (bounding box of its screens) on
   that side. Crossing at position p along the controller's edge enters the target at the same
   proportional position along its opposite edge, then clamps into a real screen.
+- **Learns when a computer moves (left/right only):** with Roam ready, if the local physical cursor is
+  pushed against a left or right outer edge that has **no** neighbour 3 times within 2.5 s (a push =
+  cursor at the edge plus ≥ 30 px more motion toward it, separated by moving away ≥ 20 px), and exactly
+  one linked computer B currently sits on the opposite side, B moves to this side: store it as the
+  pair's `manualSide`, send `ctlHello` (the other computer applies the mirrored side), and show an
+  edge pill "PC-INTERN is on this side now · Undo" for 5 s. A new Point setup (`screenLayout` change)
+  clears learned/manual sides. Top/bottom edges never learn (the menu bar and taskbar get bumped).
 - Switch rules (from Deskflow's Server::isSwitchOkay): no switch within 24 px of a corner (keeps hot
   corners), no switch while a mouse button is held unless a file drag is in progress (§9.5).
 
