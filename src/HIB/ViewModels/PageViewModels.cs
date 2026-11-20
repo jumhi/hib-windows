@@ -436,20 +436,15 @@ public partial class SettingsViewModel : ViewModelBase
     public string DesktopName => _app.Core.Link.DesktopName;
     public string DownloadsPath => AppPaths.DownloadsDir;
 
-    // TODO(engine merge): AppSettings.ShowFlickShelf (the top-edge Flick shelf, SPACE.md §5) is added by the
-    // engine branch and doesn't exist on main yet. Until then this looks the property up at runtime and the
-    // Flick section only shows the toggle when it's there. After the merge, replace the reflection with
-    // `_app.Core.Settings.ShowFlickShelf` and drop HasFlickShelfSetting.
-    static readonly System.Reflection.PropertyInfo? ShelfProperty =
-        typeof(AppSettings).GetProperty("ShowFlickShelf", typeof(bool));
-    public bool HasFlickShelfSetting => ShelfProperty is not null;
+    /// <summary>The top-edge Flick shelf (SPACE.md §5).</summary>
+    public bool HasFlickShelfSetting => true;
     public bool ShowFlickShelf
     {
-        get => ShelfProperty?.GetValue(_app.Core.Settings) is true;
+        get => _app.Core.Settings.ShowFlickShelf;
         set
         {
-            if (ShelfProperty is null || ShowFlickShelf == value) return;
-            ShelfProperty.SetValue(_app.Core.Settings, value);
+            if (_app.Core.Settings.ShowFlickShelf == value) return;
+            _app.Core.Settings.ShowFlickShelf = value;
             _app.Core.Settings.Save();
             OnPropertyChanged();
         }

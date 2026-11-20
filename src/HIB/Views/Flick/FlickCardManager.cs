@@ -1,5 +1,5 @@
 // H.I.B — incoming Flick, the same as on the Mac (FlickManager.swift): every flick (from the phone, another
-// computer through the phone, or a direct peer link) flies in from the top edge as a card, lands with a spring,
+// computer through the phone, or a direct peer link) rises from the bottom edge as a card (like the Mac), lands with a spring,
 // shows the transfer, then can be clicked to open, dragged into any app, right-clicked, swiped away, and
 // settles away on its own. Cards stack with a small offset and alternating tilt.
 using System;
@@ -217,10 +217,11 @@ public sealed class FlickCardManager
         // Stack: each live card takes the next slot, offset diagonally with alternating tilt.
         var slot = _order.Count(id => _cards.TryGetValue(id, out var o) && o.Body.Mode is not (FlickBodyMode.Dismissing or FlickBodyMode.Flung)) % 5;
         var tx = v.X + v.Width / 2 + (ratio - 0.5) * v.Width * 0.3 + slot * 26;
-        var ty = v.Y + v.Height * 0.30 + slot * 16;
+        var ty = v.Bottom - v.Height * 0.30 - slot * 16;
         tx = Math.Clamp(tx, v.X + FlickCardView.CardWidth / 2 + 24, Math.Max(v.X + FlickCardView.CardWidth / 2 + 24, v.Right - FlickCardView.CardWidth / 2 - 24));
         ty = Math.Clamp(ty, v.Y + FlickCardView.CardHeight / 2 + 24, Math.Max(v.Y + FlickCardView.CardHeight / 2 + 24, v.Bottom - FlickCardView.CardHeight / 2 - 24));
-        e.Body = FlickBody.Launch(areaWidth, FlickCardView.CardHeight, ratio, velocity, angle, tx, ty, slot);
+        var areaHeight = e.ScreenBounds.Height / e.Scaling;
+        e.Body = FlickBody.Launch(areaWidth, areaHeight, FlickCardView.CardHeight, ratio, velocity, angle, tx, ty, slot);
 
         view.RenderTransform = new TransformGroup { Children = { new ScaleTransform(), new RotateTransform() } };
         view.Face.IsHitTestVisible = false;
@@ -378,7 +379,7 @@ public sealed class FlickCardManager
     {
         var v = e.Visible;
         var path = e.Card.FilePath;
-        if (path is null) return new Point(e.Body.X, e.Body.Y - 40);
+        if (path is null) return new Point(e.Body.X, e.Body.Y + 40);
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         if (!string.IsNullOrEmpty(desktop) && string.Equals(Path.GetDirectoryName(path)?.TrimEnd('\\', '/'), desktop.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
             return new Point(v.X + 60, v.Y + 70);

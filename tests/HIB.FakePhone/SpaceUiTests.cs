@@ -214,18 +214,18 @@ public class SpaceUiTests
     }
 
     [Fact]
-    public void Flick_body_lands_on_target_from_the_top_edge()
+    public void Flick_body_rises_from_the_bottom_edge_like_the_mac()
     {
-        var b = FlickBody.Launch(1600, FlickCardView.CardHeight, 0.42, 2100, -8, 760, 300, 0);
-        Assert.True(b.Y < 0); // starts above the top edge
-        Assert.True(b.Vy > 0); // moving down into the screen
-        var maxY = b.Y;
+        var b = FlickBody.Launch(1600, 1000, FlickCardView.CardHeight, 0.42, 2100, -8, 760, 700, 0);
+        Assert.True(b.Y > 1000); // starts below the bottom edge
+        Assert.True(b.Vy < 0); // moving up into the screen
+        var minY = b.Y;
         var t = 0.0;
-        while (b.Advance(1.0 / 60) && t < 3) { t += 1.0 / 60; maxY = Math.Max(maxY, b.Y); }
+        while (b.Advance(1.0 / 60) && t < 3) { t += 1.0 / 60; minY = Math.Min(minY, b.Y); }
         Assert.Equal(FlickBodyMode.Landed, b.Mode);
         Assert.Equal(760, b.X, 3);
-        Assert.Equal(300, b.Y, 3);
-        Assert.True(maxY > 300 + 20, "springs past the landing spot a little");
+        Assert.Equal(700, b.Y, 3);
+        Assert.True(minY < 700 - 20, "springs past the landing spot a little");
         Assert.InRange(t, 0.3, 2.0); // settles in about a second
     }
 }

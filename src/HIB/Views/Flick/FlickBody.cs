@@ -1,5 +1,5 @@
 // H.I.B — the Flick card's physics: a port of the Mac's damped-spring FlickBody (FlickCardModel.swift),
-// in screen coordinates (DIPs, y down). The card flies in from the top edge, overshoots a little and
+// in screen coordinates (DIPs, y down). The card rises from the bottom edge (like the Mac), overshoots a little and
 // settles with a spring; tilt leans into the arc; dismissal shrinks it toward where the file lives.
 using System;
 
@@ -28,11 +28,12 @@ public struct FlickBody
     public static readonly double RotDamping = 2 * 0.42 * Math.Sqrt(95);
 
     /// <summary>
-    /// A body entering from the top edge of an area <paramref name="areaWidth"/> wide (DIPs, area-relative):
+    /// A body rising from the bottom edge of an area <paramref name="areaWidth"/> × <paramref name="areaHeight"/>
+    /// (DIPs, area-relative), exactly like the Mac's card:
     /// <paramref name="exitXRatio"/>, <paramref name="velocity"/> and <paramref name="angle"/> come from the
     /// sender's flickStart (angle: 0 = straight, negative = left, positive = right).
     /// </summary>
-    public static FlickBody Launch(double areaWidth, double cardHeight, double exitXRatio, double velocity, double angle,
+    public static FlickBody Launch(double areaWidth, double areaHeight, double cardHeight, double exitXRatio, double velocity, double angle,
         double targetX, double targetY, int slot)
     {
         var ratio = Math.Clamp(exitXRatio, 0.05, 0.95);
@@ -43,9 +44,9 @@ public struct FlickBody
         return new FlickBody
         {
             X = areaWidth * ratio,
-            Y = -cardHeight * 0.55,
+            Y = areaHeight + cardHeight * 0.55,
             Vx = speed * Math.Sin(rad),
-            Vy = speed * Math.Cos(rad),
+            Vy = -speed * Math.Cos(rad),
             Rot = a,
             RotVel = speed * Math.Sin(rad) * 0.02,
             TargetX = targetX,
