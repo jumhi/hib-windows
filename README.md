@@ -52,6 +52,6 @@ To remove them: `netsh advfirewall firewall delete rule name="H.I.B"` (elevated)
 ## adb / scrcpy (Phone page, mirroring, audio, Phone Agent)
 
 `HIB.Features`' `AdbLocator` looks in `<exe dir>\tools` first, then PATH, the Android SDK, winget/scoop/choco installs.
-To bundle them, unzip the official scrcpy win64 release (it includes `adb.exe`) into `<repo>/tools/win-x64/`; a
+The released zip bundles scrcpy 5.0.1 win64 (SHA-256 b12a2c4e…27a5, checked against the release's SHA256SUMS.txt). To bundle them in a local build, unzip the official scrcpy win64 release (it includes `adb.exe`) into `<repo>/tools/win-x64/`; a
 `win-x64` publish copies that folder to `out/win-x64/tools/` next to `HIB.exe` (never into the single file).
 Without it, the Phone page shows `winget install Genymobile.scrcpy` with a Copy button.
