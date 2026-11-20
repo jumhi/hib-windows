@@ -147,11 +147,15 @@ public sealed class AppController
         };
         if (c.IsRinging && c.IsIncoming)
         {
+            if (Features is { } f && f.Adb.CurrentSerial is not null)
+                vm.Buttons.Add(new ToastButton("Answer here", () => { _ = f.Calls.AnswerHereAsync(); }, "primary"));
             vm.Buttons.Add(new ToastButton("Answer", () => { _ = Core.Hub.CallControlAsync("accept"); }, "primary"));
             vm.Buttons.Add(new ToastButton("Decline", () => { _ = Core.Hub.CallControlAsync("decline"); vm.Close(); }, "danger"));
         }
         else
         {
+            if (Features is { } f && f.Adb.CurrentSerial is not null && !f.Calls.Audio.IsActive)
+                vm.Buttons.Add(new ToastButton("Hear on PC", () => f.Calls.Audio.Toggle()));
             vm.Buttons.Add(new ToastButton("End call", () => { _ = Core.Hub.CallControlAsync("end"); vm.Close(); }, "danger"));
         }
         Toasts.Show(vm);

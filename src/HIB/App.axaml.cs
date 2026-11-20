@@ -98,6 +98,22 @@ public partial class App : Application
             if (!f.Adb.IsConnected) { controller.ShowMainWindow("phone"); return; }
             if (await f.Mirror.StartMirrorAsync(f.DeviceNameForWindows) is null) controller.ShowMainWindow("phone");
         };
+        var camera = new NativeMenuItem("Open H.I.B Camera");
+        camera.Click += (_, _) =>
+        {
+            if (controller.Features is not { } f) return;
+            if (!f.Adb.IsConnected && !f.Camera.IsRunning) { controller.ShowMainWindow("webcam"); return; }
+            f.Camera.Toggle();
+        };
+        var callAudio = new NativeMenuItem("Hear call on this PC");
+        callAudio.Click += (_, _) =>
+        {
+            if (controller.Features is not { } f) return;
+            if (!f.Adb.IsConnected) { controller.ShowMainWindow("calls"); return; }
+            f.Calls.Audio.Toggle();
+        };
+        var dial = new NativeMenuItem("Calls…");
+        dial.Click += (_, _) => controller.ShowMainWindow("calls");
         var agent = new NativeMenuItem("Phone Agent…");
         agent.Click += (_, _) => controller.ShowMainWindow("agent");
         var pair = new NativeMenuItem("Pair a phone…");
@@ -113,6 +129,9 @@ public partial class App : Application
         if (controller.Features is not null)
         {
             menu.Items.Add(mirror);
+            menu.Items.Add(camera);
+            menu.Items.Add(callAudio);
+            menu.Items.Add(dial);
             menu.Items.Add(agent);
         }
         menu.Items.Add(pair);
@@ -135,10 +154,20 @@ public partial class App : Application
             var ringing = controller.Features?.Ring.IsRinging ?? hub.IsRinging;
             _ringItem.Header = ringing ? "Stop ringing" : "Ring my phone";
             _ringItem.IsEnabled = controller.Features?.Ring.CanRing ?? link.IsConnected;
+            if (controller.Features is { } ff)
+            {
+                camera.Header = ff.Camera.IsRunning ? "Close H.I.B Camera" : "Open H.I.B Camera";
+                callAudio.Header = ff.Calls.Audio.IsActive || ff.Calls.Audio.IsStarting ? "Stop call audio" : "Hear call on this PC";
+            }
             _tray.ToolTipText = link.IsConnected && link.Device is { } d ? $"H.I.B — {d.Name}{(d.BatteryLevel >= 0 ? $" · {d.BatteryLevel}%" : "")}" : "H.I.B — waiting for phone";
         }
         controller.Core.Hub.RingStateChanged += _ => Ui.Post(Refresh);
         if (controller.Features is { } fh) fh.Ring.PropertyChanged += (_, _) => Ui.Post(Refresh);
+        if (controller.Features is { } fc)
+        {
+            fc.Camera.PropertyChanged += (_, _) => Ui.Post(Refresh);
+            fc.Calls.Audio.PropertyChanged += (_, _) => Ui.Post(Refresh);
+        }
         controller.Core.Link.ConnectionChanged += (_, _) => Ui.Post(Refresh);
         controller.Core.Link.DeviceUpdated += (_, _) => Ui.Post(Refresh);
         Refresh();

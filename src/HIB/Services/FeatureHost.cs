@@ -19,6 +19,8 @@ using HIB.Features.Mirror;
 using HIB.Features.PhoneAgent;
 using HIB.Features.PhoneSearch;
 using HIB.Features.Ring;
+using HIB.Features.CallRelay;
+using HIB.Features.Camera;
 using HIB.Features.Scenes;
 
 namespace HIB.Services;
@@ -147,6 +149,8 @@ public sealed class FeatureHost : IDisposable
             AppNamesProvider = () => core.Hub.Apps.Values.ToDictionary(a => a.Package, a => a.Name),
         };
         Search = new PhoneSearchClient(Link, Adb);
+        Camera = new PhoneCameraService(Adb, Settings);
+        Calls = new CallRelayService(Adb, Link, Search, Settings);
         Scenes = new ScenesBridge(Link);
         Codes = new LoginCodeAutoCopier(Settings, new AppLoginCodeClipboard(core, () => app.MainWindow), Link);
 
@@ -230,6 +234,8 @@ public sealed class FeatureHost : IDisposable
     public RingService Ring { get; }
     public PhoneAgentController Agent { get; }
     public PhoneSearchClient Search { get; }
+    public PhoneCameraService Camera { get; }
+    public CallRelayService Calls { get; }
     public ScenesBridge Scenes { get; }
     public LoginCodeAutoCopier Codes { get; }
 
@@ -298,6 +304,8 @@ public sealed class FeatureHost : IDisposable
         try { FindMy.Dispose(); } catch { }
         try { Ring.Dispose(); } catch { }
         try { Search.Dispose(); } catch { }
+        try { Camera.Dispose(); } catch { }
+        try { Calls.Dispose(); } catch { }
         try { Scenes.Dispose(); } catch { }
         try { Codes.Dispose(); } catch { }
         try { AppOps.Dispose(); } catch { }

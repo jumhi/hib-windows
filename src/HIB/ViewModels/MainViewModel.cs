@@ -75,6 +75,8 @@ public partial class MainViewModel : ViewModelBase
         if (app.Features is { } f)
         {
             RegisterPage(new NavItem("phone", "Phone", Icons.Android, () => new PhoneViewModel(app, f), 40));
+            RegisterPage(new NavItem("webcam", "Webcam", "M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z", () => new WebcamViewModel(app, f), 42));
+            RegisterPage(new NavItem("calls", "Calls", Icons.Phone, () => new CallsViewModel(app, f), 44));
             RegisterPage(new NavItem("search", "Search phone", Icons.Magnify, () => new SearchPhoneViewModel(app, f), 50));
             RegisterPage(new NavItem("findmy", "Find My", Icons.MapMarker, () => new FindMyViewModel(app, f), 60));
             RegisterPage(new NavItem("agent", "Phone Agent", Icons.Robot, () => new PhoneAgentViewModel(app, f), 70));

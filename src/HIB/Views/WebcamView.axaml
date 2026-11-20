@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             x:Class="HIB.Views.WebcamView"
+             x:DataType="vm:WebcamViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,28" Spacing="14" MaxWidth="960">
+      <TextBlock Text="Webcam" Classes="h1"/>
+      <TextBlock Text="Use the phone's camera on this PC: as a real USB webcam, or wirelessly in a window you can share in calls." Classes="muted" TextWrapping="Wrap"/>
+
+      <!-- USB webcam -->
+      <Border Classes="hero">
+        <Grid ColumnDefinitions="Auto,*">
+          <Border Width="72" Height="72" CornerRadius="36" Background="{StaticResource HibAccentSoft}" Margin="0,0,20,0" VerticalAlignment="Top">
+            <PathIcon Width="30" Height="30" Foreground="{StaticResource HibAccentBrush}"
+                      Data="M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z"/>
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="6">
+            <TextBlock Text="Use phone as webcam (USB)" Classes="h2"/>
+            <TextBlock Classes="muted" TextWrapping="Wrap"
+                       Text="Android 14 and later can act as a normal USB camera. Zoom, Teams, Meet and OBS see it like any webcam, with no extra software."/>
+            <TextBlock Text="{Binding UsbStatus}" TextWrapping="Wrap"/>
+            <WrapPanel Margin="0,6,0,0">
+              <Button Classes="accent" Content="Use phone as webcam" Margin="0,0,8,8" Command="{Binding StartUsbCommand}" IsEnabled="{Binding UsbCanStart}"/>
+              <Button Classes="soft" Content="Stop webcam" Margin="0,0,8,8" Command="{Binding StopUsbCommand}" IsEnabled="{Binding UsbCanStop}"/>
+              <Button Classes="soft" Content="Check again" Margin="0,0,8,8" Command="{Binding CheckUsbCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+            </WrapPanel>
+            <TextBlock Text="{Binding Camera.UsbMessage}" Classes="muted" TextWrapping="Wrap"/>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="• Plug the phone into this PC with a USB cable first. H.I.B switches it over Wireless debugging, so keep that connected to stop it from here.&#10;• While it's on, the phone shows a Webcam notification. Tap it for a preview where you switch front/back camera, zoom, and turn the phone for landscape or portrait.&#10;• In your video app, pick the phone (often called &quot;Android Webcam&quot;) as the camera.&#10;• Stop webcam puts USB back to file transfer or charging. You can also change it from the phone's USB notification."/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- wireless camera -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Wireless camera window" Classes="h2"/>
+          <TextBlock Classes="muted" TextWrapping="Wrap"
+                     Text="Shows the phone camera over Wi-Fi in its own window called &quot;H.I.B Camera&quot;. In Zoom, Teams or Meet, share that window, or add it to OBS with Window Capture."/>
+          <Grid ColumnDefinitions="Auto,16,220" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+            <TextBlock Text="Camera" VerticalAlignment="Center"/>
+            <ComboBox Grid.Column="2" ItemsSource="{Binding FacingLabels}" SelectedIndex="{Binding FacingIndex}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="1" Text="Size" VerticalAlignment="Center"/>
+            <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding QualityLabels}" SelectedIndex="{Binding QualityIndex}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="2" Text="Frame rate" VerticalAlignment="Center"/>
+            <ComboBox Grid.Row="2" Grid.Column="2" ItemsSource="{Binding FpsLabels}" SelectedIndex="{Binding FpsIndex}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="3" Text="Rotate" VerticalAlignment="Center"/>
+            <ComboBox Grid.Row="3" Grid.Column="2" ItemsSource="{Binding RotationLabels}" SelectedIndex="{Binding RotationIndex}" HorizontalAlignment="Stretch"/>
+          </Grid>
+          <CheckBox Content="Play the phone's microphone on this PC" IsChecked="{Binding MicAudio}"/>
+          <CheckBox Content="Borderless window" IsChecked="{Binding Borderless}"/>
+          <CheckBox Content="Keep on top" IsChecked="{Binding OnTop}"/>
+          <WrapPanel>
+            <Button Classes="accent" Content="{Binding CameraButton}" Margin="0,0,8,8" Command="{Binding ToggleCameraCommand}" IsEnabled="{Binding CameraCanToggle}"/>
+            <Button Classes="soft" Content="List cameras" Margin="0,0,8,8" Command="{Binding ListCamerasCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+          </WrapPanel>
+          <TextBlock Classes="caption" TextWrapping="Wrap" Text="Changes apply the next time the camera window opens. Drag a borderless window by its picture."/>
+          <TextBlock Text="{Binding Camera.LastError}" Foreground="{StaticResource HibDanger}" TextWrapping="Wrap" FontSize="12"/>
+          <SelectableTextBlock Text="{Binding Camera.CameraList}" FontFamily="Consolas, Menlo, monospace" FontSize="11.5" Foreground="{StaticResource HibMuted}" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
+
+      <!-- virtual camera -->
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Text="As a camera in other apps (virtual camera)" FontWeight="SemiBold"/>
+          <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                     Text="Windows 11 can add virtual cameras, but only through a native media-source component registered with the system camera service. H.I.B doesn't install one. Use the USB webcam above, share the H.I.B Camera window, or use OBS's virtual camera:"/>
+          <StackPanel Spacing="6" IsVisible="{Binding ObsInstalled}">
+            <TextBlock TextWrapping="Wrap" FontSize="12"
+                       Text="1. In OBS, add a source: Window Capture → &quot;[scrcpy.exe]: H.I.B Camera&quot;.&#10;2. Click Start Virtual Camera.&#10;3. In Zoom, Teams or Meet, choose &quot;OBS Virtual Camera&quot;."/>
+            <Button Classes="soft" Content="Open OBS" HorizontalAlignment="Left" Command="{Binding OpenObsCommand}"/>
+          </StackPanel>
+          <TextBlock Classes="caption" IsVisible="{Binding ObsMissing}" TextWrapping="Wrap" Text="OBS Studio isn't installed. It's free from obsproject.com."/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
