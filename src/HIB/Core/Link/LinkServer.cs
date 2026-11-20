@@ -81,6 +81,12 @@ public sealed class LinkServer : ILinkSession, IDisposable
     /// <summary>Supplies macInfo.savedAppPackages (the package list the desktop already has icons for).</summary>
     public Func<IReadOnlyList<string>>? SavedAppPackagesProvider { get; set; }
 
+    /// <summary>
+    /// A message sent on the same connection right after every macInfo (Point &amp; Flick's screensInfo, SPACE.md §7.2).
+    /// Null result = nothing to send.
+    /// </summary>
+    public Func<(string Type, object Data)?>? AfterMacInfo { get; set; }
+
     /// <summary>Remote IP of the primary connection, if any.</summary>
     public string? PrimaryRemoteAddress { get { lock (_gate) return _primary?.RemoteIp; } }
 
@@ -497,6 +503,11 @@ public sealed class LinkServer : ILinkSession, IDisposable
 
         WriteLog($"Handshake: {name} ({ip}) v{info.Version}");
         _ = SendToAsync(conn, "macInfo", BuildMacInfo(), CancellationToken.None);
+        // Queued behind macInfo on the same connection (the send lock is FIFO).
+        (string Type, object Data)? after = null;
+        try { after = AfterMacInfo?.Invoke(); }
+        catch (Exception ex) { WriteLog("After-macInfo message failed: " + ex.Message); }
+        if (after is { } extra) _ = SendToAsync(conn, extra.Type, extra.Data, CancellationToken.None);
 
         if (becameConnected) SafeInvoke(() => ConnectionChanged?.Invoke(this, true));
         SafeInvoke(() => DeviceUpdated?.Invoke(this, info));

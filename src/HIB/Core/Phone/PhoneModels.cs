@@ -138,6 +138,8 @@ public sealed record FlickInfo(string Id, string Kind, string Name, string? Mime
     public double? Heading { get; init; }
     /// <summary>Phone elevation in degrees above the horizon (optional).</summary>
     public double? Elevation { get; init; }
+    /// <summary>The id of the screen to land on (Point &amp; Flick, SPACE.md §7.4); wins when that screen exists here.</summary>
+    public string? Screen { get; init; }
     public bool IsTransferless => Kind is "link" or "text";
     /// <summary>Set when another computer sent this through the phone (multi-desktop relay).</summary>
     public string? From { get; init; }

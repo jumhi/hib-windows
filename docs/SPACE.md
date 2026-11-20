@@ -33,9 +33,12 @@ The owner's complaints, verbatim in spirit:
    3. the computer **in use**
    4. the last one used
    5. the primary computer
-5. **Flick is "throw it at a device", in every direction.**
-   - **On the phone:** the Flick screen shows the devices as bubbles across the top. Throwing a card
-     toward a bubble sends it there. A straight-up throw goes to the highlighted default.
+5. **Flick goes where the phone points (§7).** No buttons to switch device.
+   - **On the phone:** point the phone at a screen (the Mac's, the PC's, any of their monitors) and
+     throw. That screen glows while you point at it, and the card lands on it. A one-time "Point setup"
+     runs by itself the first time: each screen lights up in turn and you point at it for a second.
+   - Not pointing at any screen → the target rule (in use, then last used, then primary).
+   - Anything can be flicked: photos, videos, any file, links, text, the clipboard.
    - **On a computer:** dragging a file brings up a shelf of device bubbles at the top of the screen.
      Dropping (or throwing) the file on a bubble sends it there.
    - **Arrival:** the same flying card, on the Mac and on Windows. On the phone it arrives as a rich
@@ -187,29 +190,22 @@ Every field from §6.22 stays the same. The new fields are:
 - The phone's own Play control defaults to the target rule (§1.4): the computer in use.
 - Computers show "Playing on <name>" when `playingOn` is another computer, and offer "Play here".
 
-### 3.6 Flick from the phone (no wire change)
+### 3.6 Flick from the phone
 
-- The phone still sends `flickStart` and the transfer to the chosen computer only.
-- It adds `heading`/`elevation` as today, so the computer can still pick the screen.
+- The phone sends `flickStart` and the transfer to the chosen computer only.
+- `flickStart` gains `screen` (§7.4): the id of the screen to land on. It still carries
+  `heading`/`elevation` for computers that don't know `screen`.
 
 ## 4. The phone app (Android)
 
 ### Flick screen
-- **Title:** "Flick", with the subtitle "Throw it at a device".
-- **Device bubbles** across the top in a gentle arc, one per connected computer:
-  - Each bubble shows an icon, the name and an **In use** pill on the computer in use.
-  - One computer gets one centred bubble. Offline computers are hidden.
-  - The current target bubble glows.
-- **Picking a target:**
-  - The default is the target rule.
-  - While the user drags the card, the bubble in the drag direction lights up live: the top 180° is split
-    into N equal sectors.
-  - Releasing sends the card to the lit bubble.
-  - Tapping a bubble picks it explicitly.
-- **Aim:**
-  - "Teach aim" is in Flick settings: for each computer, point the phone at it and tap its bubble.
-    Store the heading and elevation per computer id.
-  - Once two or more computers are taught, pointing the phone lights the nearest one within 35°.
+- **Title:** "Flick". The subtitle names where it goes now: "→ <computer> · <screen>" (screen part only
+  when that computer has more than one screen).
+- The target is **where the phone points** (§7). There is no tap-to-pick and no drag-direction
+  picking: the device bubbles across the top are indicators only (the target one glows).
+- Opening Flick runs **Point setup** (§7.5) first when it is needed.
+- The in-app Flick card offers **Photos & videos**, **Files** (any type) and **Clipboard**.
+- The share sheet accepts anything (already `*/*`).
 
 ### Devices card
 - The "Your computers" card becomes **"Your devices"**: each computer with its state
@@ -318,3 +314,74 @@ of the Mac main window is `docs/design/mac-main.png`. The theme tokens come from
 - **Settings:** a Mac-style settings screen with its own list of sections on the left. Everything that used
   to be a top-level sidebar page lives here: Clipboard, Files, Phone, Webcam & Calls, Search phone,
   Find My, Phone Agent, Flick, Pair, About and so on.
+
+## 7. Point & Flick: screens across every computer
+
+The phone keeps one map of every screen of every computer and where it is (the direction the phone
+points to reach it). Pointing picks the computer **and** the screen. The computers light up the screen
+being pointed at, so the user sees the target before throwing.
+
+### 7.1 Screen ids
+- **Mac:** `FlickScreenPicker.key(for:)` (vendor-model-serial-name).
+- **Windows:** the Avalonia `Screen.DisplayName` (e.g. `\\.\DISPLAY1`); if empty, `"x,y,wxh"` of its bounds.
+- The phone treats a computer that never sent `screensInfo` (older version) as one screen with id `""`
+  ("let the computer choose").
+
+### 7.2 `screensInfo` D→P
+```json
+{"type":"screensInfo","data":{"screens":[
+  {"id":"…","name":"Built-in Retina Display","primary":true,"x":0,"y":0,"w":1512,"h":982}
+]}}
+```
+- Sent right after the computer's `macInfo` on every new phone connection, whenever the displays
+  change, and in reply to `screensRequest`.
+- `x,y,w,h`: the screen's bounds in the computer's desktop coordinates (points/DIPs, y down on both).
+  The phone only uses them to order screens left → right and to name them.
+
+### 7.3 `screensRequest` P→D
+`{"type":"screensRequest","data":{}}`. The computer replies with `screensInfo`. The phone sends it to
+every connected computer when the Flick screen opens.
+
+### 7.4 `flickAim` P→D and `flickStart.screen`
+```json
+{"type":"flickAim","data":{"screen":"<id>"}}   // light this screen
+{"type":"flickAim","data":{"screen":null}}     // light nothing here
+```
+- While the phone's Flick screen is open, the phone sends `flickAim{screen:id}` to the computer that
+  owns the aimed screen and `flickAim{screen:null}` to any computer it lit before. It re-sends the
+  current one every 1.5 s, and sends `null` to all when Flick closes.
+- **Aim light (computer):** on that screen, a soft cyan (#20D9FF) glow rising from the bottom edge
+  (about 14% of the screen height, fading upward; cards rise from the bottom) and a small pill at the
+  bottom centre: "Flick lands here". Click-through, above everything, on every Space/desktop, no focus
+  steal. Fades in 150 ms, out 250 ms. Hides by itself 4 s after the last `flickAim` naming it.
+  An unknown id lights the main screen.
+- `flickStart` gains `"screen":"<id>"`. When that screen exists the card lands on it, overriding the
+  computer's own aim/teaching. Otherwise the computer's own rule applies.
+
+### 7.5 `aimSetup` P→D (Point setup)
+```json
+{"type":"aimSetup","data":{"screen":"<id>","step":1,"total":3,"progress":0.4}}
+{"type":"aimSetup","data":{"screen":null}}   // hide
+```
+- **Point target (computer):** on that screen, a full-screen dim (ink #090C21 at 55%) with a large
+  pulsing cyan ring in the centre, "Point your phone here" and "Screen <step> of <total>" under it.
+  `progress` (0…1) fills the ring; at 1 the ring turns lime (#BAFF38) with a check, then fades.
+  Click-through. Hides on `screen:null` or 6 s after the last update.
+- **Phone:**
+  - Runs it automatically when Flick opens, there are 2+ screens across the connected computers, and
+    any of them has no saved aim. "Point setup again" in Flick settings re-runs it for all.
+  - Order: computer in use first, then the others; each computer's screens left → right.
+  - For each screen it sends `aimSetup` (to that screen's computer; `null` to the previous computer
+    when it moves on) and shows "Point at the glowing screen" with the computer and screen name.
+    For an id `""` (older computer) it says "Point at <name>'s screen" instead.
+  - Hold-to-capture: while the aim moves less than 3° over the last 0.5 s, progress grows to 1 in
+    0.9 s. Moving resets it. At 1: save the aim, haptic, next screen. "Skip" ends setup (target rule).
+  - Sends `aimSetup{screen:null}` to every computer when setup ends.
+
+### 7.6 Phone storage and matching
+- `hib_flick_screens_v1`: JSON list of `{computer, screen, name, h, e}` (`computer` = desktop name).
+  Re-running setup replaces the entries of the screens it captured. The old per-computer aims
+  (`FlickAimStore`) are no longer used.
+- Live aim: the nearest saved screen of a **connected** computer within 35° (great-circle angle).
+  None within 35° → target rule, nothing lit.
+- With only one screen in total, there is no setup and no aim: everything goes to that computer.

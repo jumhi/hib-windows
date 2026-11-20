@@ -232,4 +232,112 @@ public class DesignShotsTests
         window.AllowClose = true;
         window.Close();
     }
+
+    /// <summary>A 1440×900 Windows desktop (wallpaper, an app window, a 48 px taskbar) at 2×, to show the overlays on.</summary>
+    static void Desktop(DrawingContext ctx)
+    {
+        ctx.FillRectangle(new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            GradientStops = { new GradientStop(Color.Parse("#0C1733"), 0), new GradientStop(Color.Parse("#173A6E"), 0.55), new GradientStop(Color.Parse("#0A1328"), 1) },
+        }, new Rect(0, 0, 2880, 1800));
+        ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#332A6FDB")), null, new Point(2200, 500), 900, 620);
+        ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#2219B4E0")), null, new Point(600, 1300), 820, 520);
+        // An app window.
+        var win = new Rect(360, 220, 1560, 980);
+        ctx.DrawRectangle(new SolidColorBrush(Color.Parse("#F01B2030")), new Pen(new SolidColorBrush(Color.Parse("#26FFFFFF")), 2), new RoundedRect(win, 16));
+        ctx.DrawRectangle(new SolidColorBrush(Color.Parse("#FF242A3E")), null, new RoundedRect(new Rect(win.X, win.Y, win.Width, 72), 16, 16, 0, 0));
+        for (var i = 0; i < 7; i++)
+            ctx.DrawRectangle(new SolidColorBrush(Color.Parse(i == 0 ? "#40FFFFFF" : "#1FFFFFFF")), null,
+                new RoundedRect(new Rect(win.X + 64, win.Y + 140 + i * 92, i == 0 ? 640 : 1100 - i * 70, i == 0 ? 36 : 24), 8));
+        // The taskbar.
+        ctx.FillRectangle(new SolidColorBrush(Color.Parse("#F2101422")), new Rect(0, 1704, 2880, 96));
+        ctx.FillRectangle(new SolidColorBrush(Color.Parse("#14FFFFFF")), new Rect(0, 1704, 2880, 2));
+        var colors = new[] { "#3B82F6", "#F59E0B", "#10B981", "#E5E7EB", "#6366F1", "#EF4444" };
+        for (var i = 0; i < colors.Length; i++)
+            ctx.DrawRectangle(new SolidColorBrush(Color.Parse(colors[i])), null, new RoundedRect(new Rect(1440 - colors.Length * 44 + i * 88 + 16, 1724, 56, 56), 12));
+    }
+
+    /// <summary>
+    /// A 1440×900 window showing <see cref="Desktop"/> with the overlay's content moved onto it at its place (headless
+    /// frames are opaque, so the overlay can't be captured on its own and blended).
+    /// </summary>
+    static async Task<Window> OnDesktop(Window overlay, PixelRect area)
+    {
+        await Pump(50);
+        Assert.NotNull(overlay.CaptureRenderedFrame()); // the overlay window itself renders
+        var content = (Control)overlay.Content!;
+        overlay.Content = null;
+        content.Width = area.Width / 2.0;
+        content.Height = area.Height / 2.0;
+        content.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        content.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+        content.Margin = new Thickness(area.X / 2.0, area.Y / 2.0, 0, 0);
+        var desktop = new Bitmap(new MemoryStream(Png(2880, 1800, Desktop)));
+        var host = new Window
+        {
+            Width = 1440,
+            Height = 900,
+            Content = new Panel { Children = { new Image { Source = desktop, Stretch = Stretch.Fill }, content } },
+        };
+        host.SetRenderScaling(2);
+        host.Show();
+        await Pump(250);
+        return host;
+    }
+
+    static byte[] Capture(TopLevel w)
+    {
+        Dispatcher.UIThread.RunJobs();
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        var frame = w.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        using var ms = new MemoryStream();
+        frame!.Save(ms);
+        return ms.ToArray();
+    }
+
+    static void SaveShot(byte[] png, string name)
+    {
+        if (ShotDir is null) return;
+        Directory.CreateDirectory(ShotDir);
+        File.WriteAllBytes(Path.Combine(ShotDir, name + ".png"), png);
+    }
+
+    [AvaloniaFact]
+    public async Task Point_and_flick_overlays()
+    {
+        // A 1440×900-point screen at 200% with a 48-point taskbar.
+        var screen = FakeScreen.Make(@"\\.\DISPLAY1", new PixelRect(0, 0, 2880, 1800), 2, true, new PixelRect(0, 0, 2880, 1704));
+
+        // The aim light: the bottom of the screen glows, the pill sits above the taskbar.
+        var light = new HIB.Views.Flick.AimLightWindow(@"\\.\DISPLAY1");
+        light.SetRenderScaling(2);
+        light.ShowOn(screen);
+        await Pump(300);
+        Assert.Equal(1800, light.Area.Bottom);
+        var host = await OnDesktop(light, light.Area);
+        SaveShot(Capture(host), "windows-aim-light");
+        host.Close();
+        light.FadeOutAndClose();
+
+        // Point setup's target, part filled, then captured (lime ring and check).
+        var display = new HIB.Core.Phone.DisplayScreen(@"\\.\DISPLAY1", "Display 1", true, 0, 0, 1440, 900);
+        var target = new HIB.Views.Flick.PointTargetWindow(@"\\.\DISPLAY1");
+        target.SetRenderScaling(2);
+        target.Update(new HIB.Core.Phone.AimSetupState(display, 1, 2, 0.62));
+        target.ShowOn(screen);
+        await Pump(300);
+        host = await OnDesktop(target, target.Area);
+        await Pump(400);
+        SaveShot(Capture(host), "windows-point-target");
+        target.Update(new HIB.Core.Phone.AimSetupState(display, 1, 2, 1));
+        await Pump(500);
+        SaveShot(Capture(host), "windows-point-target-done");
+        host.Close();
+        target.FadeOutAndClose();
+        await Pump(300);
+        Assert.True(light.IsClosed && target.IsClosed);
+    }
 }

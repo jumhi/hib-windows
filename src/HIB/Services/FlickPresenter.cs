@@ -13,25 +13,26 @@ namespace HIB.Services;
 
 /// <summary>
 /// Maps Avalonia monitors to the core <see cref="FlickScreenPicker"/>, shows the "teach my screens"
-/// hints, and remembers which monitor each flick landed on.
+/// hints, and remembers which monitor each flick landed on. A flick that names its screen (Point &amp; Flick,
+/// SPACE.md §7.4 <c>flickStart.screen</c>) lands there whenever that screen exists.
 /// </summary>
 public sealed class FlickPresenter
 {
     readonly FlickScreenPicker _picker;
-    readonly Func<Window?> _anchor;
+    readonly ScreenMap _screens;
     readonly Dictionary<string, Screen> _landing = new();
     Window? _hint;
 
-    public FlickPresenter(FlickScreenPicker picker, Func<Window?> anchor)
+    public FlickPresenter(FlickScreenPicker picker, ScreenMap screens)
     {
         _picker = picker;
-        _anchor = anchor;
+        _screens = screens;
         picker.TeachingStepChanged += (key, index, total) => Dispatcher.UIThread.Post(() => ShowHint(key, index, total));
     }
 
     public FlickScreenPicker Picker => _picker;
 
-    IReadOnlyList<Screen> Screens => _anchor()?.Screens?.All ?? (IReadOnlyList<Screen>)Array.Empty<Screen>();
+    IReadOnlyList<Screen> Screens => _screens.All;
 
     /// <summary>A stable key per monitor: its device name plus native resolution.</summary>
     public static string KeyFor(Screen s, int index)
@@ -46,6 +47,12 @@ public sealed class FlickPresenter
     /// <summary>Must run on the UI thread.</summary>
     public Screen? PickFor(FlickInfo flick)
     {
+        // Point & Flick: the phone already chose the screen; it overrides this computer's own aim/teaching.
+        if (_screens.Find(flick.Screen) is { } named)
+        {
+            _landing[flick.Id] = named;
+            return named;
+        }
         var list = CurrentScreens();
         if (list.Count == 0) return null;
         var primary = Screens.FirstOrDefault(s => s.IsPrimary) ?? list[0].screen;

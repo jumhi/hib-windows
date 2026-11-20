@@ -69,6 +69,8 @@ public sealed class HibCore : IDisposable
         space.Log += AddLog;
         Space = space;
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
+        Aim = new PointAim(Link);
+        Aim.Log += AddLog;
         Link.ConnectionChanged += (_, connected) =>
         {
             if (!connected && Udp is not null) _ = Udp.BurstAsync();
@@ -85,6 +87,8 @@ public sealed class HibCore : IDisposable
     /// <summary>The other computers connected to the phone (multi-desktop).</summary>
     public PhoneEcosystem Ecosystem { get; }
     public FlickScreenPicker FlickPicker { get; }
+    /// <summary>Point &amp; Flick (SPACE.md §7): screensInfo, the aim light and the point target.</summary>
+    public PointAim Aim { get; }
     /// <summary>Every other device (phone + computers): SPACE.md.</summary>
     public HIB.Core.Space.SpaceDirectory Space { get; }
     public ClipboardSync? Clipboard { get; private set; }
@@ -212,6 +216,7 @@ public sealed class HibCore : IDisposable
         Udp?.Dispose();
         Mdns?.Dispose();
         SpaceEngine.Dispose();
+        Aim.Dispose();
         Link.Dispose();
     }
 }

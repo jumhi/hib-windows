@@ -28,11 +28,14 @@ public sealed class AppController
         _lifetime = lifetime;
         Current = this;
         Toasts = new ToastManager(() => MainWindow);
-        Flick = new FlickPresenter(core.FlickPicker, () => MainWindow);
+        Screens = new ScreenMap(() => MainWindow);
+        Flick = new FlickPresenter(core.FlickPicker, Screens);
         // Every incoming Flick (phone, relay or direct peer link) flies in as the Mac's card.
         Cards = new HIB.Views.Flick.FlickCardManager(this);
         // Flick shelf, Explorer "Send to", --send-to pipe (the real desktop app only).
         if (lifetime is not null) SpaceUi = new SpaceUiHost(this);
+        // Point & Flick: screensInfo to the phone, the aim light and the point target (SPACE.md §7).
+        Point = new PointFlickHost(this);
 
         core.Link.ConnectionChanged += (_, connected) =>
         {
@@ -74,7 +77,10 @@ public sealed class AppController
     /// <summary>ADB / mirroring / Find My / Phone Agent services (null in core-only tests).</summary>
     public FeatureHost? Features { get; set; }
     public ToastManager Toasts { get; }
+    /// <summary>This computer's monitors with their Point &amp; Flick ids.</summary>
+    public ScreenMap Screens { get; }
     public FlickPresenter Flick { get; }
+    public PointFlickHost Point { get; }
     public HIB.Views.Flick.FlickCardManager Cards { get; }
     public SpaceUiHost? SpaceUi { get; }
     public Window? MainWindow => WindowOverride ?? _lifetime?.MainWindow;
