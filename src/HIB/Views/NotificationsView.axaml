@@ -2,75 +2,166 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HIB.ViewModels"
              xmlns:s="using:HIB.Services"
+             xmlns:c="using:HIB.Views.Controls"
              x:Class="HIB.Views.NotificationsView"
              x:DataType="vm:NotificationsViewModel">
-  <Grid RowDefinitions="Auto,Auto,*" Margin="32,28,32,0">
-    <Grid ColumnDefinitions="*,Auto,Auto">
-      <TextBlock Text="Notifications" Classes="h1"/>
-      <Button Grid.Column="1" Classes="soft" Content="Clear list" Margin="0,0,8,0" Command="{Binding ClearLocalCommand}"/>
-      <Button Grid.Column="2" Classes="danger" Content="Dismiss all on phone" Command="{Binding ClearAllCommand}"/>
-    </Grid>
-    <TextBlock Grid.Row="1" Text="{Binding Status}" Classes="muted" Margin="0,6,0,10"/>
-    <Panel Grid.Row="2">
-      <StackPanel IsVisible="{Binding IsEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-        <PathIcon Width="40" Height="40" Foreground="{StaticResource HibAccentBrush}" Data="M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M14,21A2,2 0 0,1 12,23A2,2 0 0,1 10,21"/>
-        <TextBlock Text="You're all caught up" Classes="h2" HorizontalAlignment="Center"/>
-        <TextBlock Text="Phone notifications show up here and as pop-ups." Classes="muted" HorizontalAlignment="Center"/>
-      </StackPanel>
-      <ScrollViewer IsVisible="{Binding !IsEmpty}">
-        <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,8,24">
+  <!-- The Mac's NotificationView: glass cards, stacked by app or one flat list, hover to hide/dismiss -->
+  <UserControl.Styles>
+    <Style Selector="Border.ncard">
+      <Setter Property="Background" Value="{StaticResource HibPanelFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibPanelStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Padding" Value="12,10"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+      <Setter Property="BoxShadow" Value="0 6 16 0 #2E000000"/>
+    </Style>
+    <Style Selector="Border.ncard:pointerover">
+      <Setter Property="BorderBrush" Value="#5920D9FF"/>
+    </Style>
+    <Style Selector="Border.ncard StackPanel.hover">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
+    <Style Selector="Border.ncard:pointerover StackPanel.hover">
+      <Setter Property="IsVisible" Value="True"/>
+    </Style>
+    <Style Selector="Image.float">
+      <Setter Property="RenderTransform">
+        <TranslateTransform/>
+      </Setter>
+      <Style.Animations>
+        <Animation Duration="0:0:2.4" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="4"/></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="-5"/></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </UserControl.Styles>
+
+  <UserControl.DataTemplates>
+    <!-- one notification card (NotificationCardView) -->
+    <DataTemplate DataType="vm:NotificationItemViewModel">
+      <Border Classes="ncard">
+        <Border.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Mute this app" Command="{Binding MuteAppCommand}"/>
+            <MenuItem Header="Hide here" Command="{Binding HideCommand}"/>
+            <MenuItem Header="Dismiss on phone" Command="{Binding DismissCommand}"/>
+          </ContextMenu>
+        </Border.ContextMenu>
+        <Panel>
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Width="34" Height="34" CornerRadius="9" ClipToBounds="True" Background="{StaticResource HibCyanSoft}"
+                    VerticalAlignment="Top" Margin="0,2,12,0">
+              <Panel>
+                <Image Source="{Binding Icon}" IsVisible="{Binding HasIcon}" Margin="2"/>
+                <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasIcon}" FontWeight="Bold" Foreground="{StaticResource HibCyan}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Panel>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="2">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding Headline}" Classes="headline" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Text="{Binding Time}" Classes="faint" Margin="10,1,4,0"/>
+              </Grid>
+              <TextBlock Text="{Binding Body}" TextWrapping="Wrap" MaxLines="6" TextTrimming="CharacterEllipsis"
+                         Foreground="#D6DAEA" IsVisible="{Binding HasBody}"/>
+              <ProgressBar Value="{Binding ProgressValue}" IsIndeterminate="{Binding IsIndeterminate}" Height="4" Margin="0,6,0,2"
+                           IsVisible="{Binding HasProgress}"/>
+              <!-- actions: reply opens a field, like the Mac -->
+              <WrapPanel Margin="0,6,0,0" IsVisible="{Binding HasActions}">
+                <Button Classes="primary icon" Width="34" Height="30" Margin="0,0,6,4" ToolTip.Tip="{Binding ReplyAction}"
+                        Command="{Binding StartReplyCommand}" IsVisible="{Binding CanReply}">
+                  <c:Icon Data="{x:Static vm:Icons.Reply}" Size="15" StrokeThickness="2.2"/>
+                </Button>
+                <ItemsControl ItemsSource="{Binding Buttons}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="s:ToastButton">
+                      <Button Content="{Binding Label}" Command="{Binding Command}" Margin="0,0,6,4" Padding="12,5" FontSize="12.5"/>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </WrapPanel>
+              <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0" IsVisible="{Binding IsReplying}">
+                <TextBox Text="{Binding ReplyText}" PlaceholderText="{Binding ReplyPlaceholder}" MaxWidth="420" HorizontalAlignment="Stretch">
+                  <TextBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding SendReplyCommand}"/>
+                  </TextBox.KeyBindings>
+                </TextBox>
+                <Button Grid.Column="1" Classes="primary icon" Width="36" Height="32" Margin="8,0,0,0" ToolTip.Tip="Send"
+                        Command="{Binding SendReplyCommand}">
+                  <c:Icon Data="{x:Static vm:Icons.Send}" Size="15" StrokeThickness="2.2"/>
+                </Button>
+              </Grid>
+            </StackPanel>
+          </Grid>
+          <!-- hover pill: hide / dismiss -->
+          <StackPanel Classes="hover" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-6,0">
+            <Button Classes="icon small" Background="#2E1A2045" ToolTip.Tip="Hide" Command="{Binding HideCommand}">
+              <c:Icon Data="{x:Static vm:Icons.EyeOff}" Size="13"/>
+            </Button>
+            <Button Classes="icon small" Background="#2E1A2045" ToolTip.Tip="Dismiss on phone" Command="{Binding DismissCommand}">
+              <c:Icon Data="{x:Static vm:Icons.X}" Size="13" StrokeThickness="2.4"/>
+            </Button>
+          </StackPanel>
+        </Panel>
+      </Border>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Panel>
+    <!-- NotificationEmptyView -->
+    <StackPanel IsVisible="{Binding IsEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Margin="0,0,0,40">
+      <Image Classes="float" Source="avares://HIB/Assets/hibbit.png" Width="128" Height="118"/>
+      <TextBlock Text="You're all caught up!" HorizontalAlignment="Center" FontSize="15" FontWeight="Medium"/>
+      <TextBlock Text="Phone notifications show up here and as pop-ups." Classes="caption" HorizontalAlignment="Center"/>
+    </StackPanel>
+
+    <Grid RowDefinitions="Auto,*" IsVisible="{Binding !IsEmpty}">
+      <!-- toolbar: stacks toggle + clear (the Mac keeps these in its window toolbar) -->
+      <Grid ColumnDefinitions="*,Auto,Auto" Margin="22,0,22,8">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="{Binding CountText}" Classes="caption"/>
+          <TextBlock Text="{Binding Status}" Classes="faint" TextTrimming="CharacterEllipsis" MaxWidth="320"/>
+        </StackPanel>
+        <Button Grid.Column="1" Classes="icon" Margin="0,0,8,0" ToolTip.Tip="{Binding StackTip}" Command="{Binding ToggleStacksCommand}">
+          <c:Icon Data="{Binding StackIcon}" Size="15"/>
+        </Button>
+        <Button Grid.Column="2" ToolTip.Tip="Clear all (also on the phone)" Command="{Binding ClearAllCommand}" Padding="12,6">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{x:Static vm:Icons.Wind}" Size="15"/>
+            <TextBlock Text="Clear all" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <!-- stacked by app -->
+      <ScrollViewer Grid.Row="1" IsVisible="{Binding IsStacked}" Padding="22,0,22,24">
+        <ItemsControl ItemsSource="{Binding Groups}" MaxWidth="760">
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:NotificationItemViewModel">
-              <Border Classes="card" Margin="0,0,0,10" Padding="16,14">
-                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
-                  <Border Grid.RowSpan="2" Width="38" Height="38" CornerRadius="10" ClipToBounds="True" Background="{StaticResource HibAccentSoft}" Margin="0,0,14,0" VerticalAlignment="Top">
-                    <Panel>
-                      <Image Source="{Binding Icon}" IsVisible="{Binding HasIcon}"/>
-                      <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasIcon}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="{StaticResource HibAccentBrush}"/>
-                    </Panel>
-                  </Border>
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="{Binding App}" Classes="caption"/>
-                    <TextBlock Text="·" Classes="caption"/>
-                    <TextBlock Text="{Binding Time}" Classes="caption"/>
+            <DataTemplate x:DataType="vm:NotificationGroupViewModel">
+              <StackPanel Margin="0,0,0,10">
+                <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource HibMuted}" Margin="6,0,0,6"/>
+                <ItemsControl ItemsSource="{Binding Visible}"/>
+                <Button Classes="link" HorizontalAlignment="Left" Margin="4,-2,0,0" Command="{Binding ToggleCommand}" IsVisible="{Binding HasMore}">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <c:Icon Data="{Binding MoreIcon}" Size="12" StrokeThickness="2.4"/>
+                    <TextBlock Text="{Binding MoreText}" FontSize="12" VerticalAlignment="Center"/>
                   </StackPanel>
-                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-                    <Button Classes="icon-btn" Command="{Binding MuteAppCommand}" ToolTip.Tip="Stop forwarding this app">
-                      <PathIcon Width="13" Height="13" Data="M20.84,22.73L18.11,20H3V19L5,17V11C5,9.86 5.29,8.73 5.83,7.72L1,2.89L2.28,1.61L22.11,21.44L20.84,22.73M19,15.8V11C19,7.9 16.97,5.17 14,4.29C14,4.19 14,4.1 14,4A2,2 0 0,0 12,2A2,2 0 0,0 10,4C10,4.1 10,4.19 10,4.29C9.39,4.47 8.8,4.74 8.26,5.09L19,15.8M12,23A2,2 0 0,0 14,21H10A2,2 0 0,0 12,23Z"/>
-                    </Button>
-                    <Button Classes="icon-btn" Command="{Binding DismissCommand}" ToolTip.Tip="Dismiss on phone">
-                      <PathIcon Width="11" Height="11" Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
-                    </Button>
-                  </StackPanel>
-                  <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="2" Margin="0,2,0,0">
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Foreground="#CFC8E0" IsVisible="{Binding HasBody}"/>
-                    <ProgressBar Value="{Binding ProgressValue}" IsIndeterminate="{Binding IsIndeterminate}" Height="4" Margin="0,6,0,0" IsVisible="{Binding HasProgress}"/>
-                  </StackPanel>
-                  <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,10,0,0" IsVisible="{Binding CanReply}">
-                    <TextBox Text="{Binding ReplyText}" PlaceholderText="{Binding ReplyAction, StringFormat='{}{0}…'}">
-                      <TextBox.KeyBindings>
-                        <KeyBinding Gesture="Enter" Command="{Binding SendReplyCommand}"/>
-                      </TextBox.KeyBindings>
-                    </TextBox>
-                    <Button Grid.Column="1" Classes="accent" Content="Send" Margin="8,0,0,0" Command="{Binding SendReplyCommand}"/>
-                  </Grid>
-                  <ItemsControl Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding Buttons}" Margin="0,8,0,0">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="s:ToastButton">
-                        <Button Classes="soft" Content="{Binding Label}" Command="{Binding Command}" Margin="0,0,6,0"/>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </Grid>
-              </Border>
+                </Button>
+              </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </ScrollViewer>
-    </Panel>
-  </Grid>
+
+      <!-- one flat list, newest first -->
+      <ScrollViewer Grid.Row="1" IsVisible="{Binding IsFlat}" Padding="22,0,22,24">
+        <ItemsControl ItemsSource="{Binding Items}" MaxWidth="760"/>
+      </ScrollViewer>
+    </Grid>
+  </Panel>
 </UserControl>

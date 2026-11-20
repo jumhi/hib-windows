@@ -1,59 +1,90 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
              x:Class="HIB.Views.ClipboardView"
              x:DataType="vm:ClipboardViewModel">
-  <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="32,28,32,0">
-    <Grid ColumnDefinitions="*,Auto">
-      <TextBlock Text="Clipboard" Classes="h1"/>
-      <Button Grid.Column="1" Classes="soft" Content="Clear history" Command="{Binding ClearCommand}"/>
-    </Grid>
-    <Border Grid.Row="1" Classes="card" Margin="0,16,0,0">
-      <StackPanel Spacing="10">
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel>
-            <TextBlock Text="Sync clipboard with the phone" FontWeight="SemiBold"/>
-            <TextBlock Text="Copy on one, paste on the other. Text and images (up to 8 MB)." Classes="muted" FontSize="12"/>
+  <!-- Settings › Clipboard -->
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="Clipboard" IconData="{x:Static vm:Icons.Clipboard}"/>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Classes="tile" Margin="0,0,14,0">
+              <c:Icon Data="{x:Static vm:Icons.ClipboardCopy}"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+              <TextBlock Text="Copy on one, paste on the other" Classes="headline"/>
+              <TextBlock Text="Text and pictures (up to 8 MB) travel between this PC and your phone." Classes="caption" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Grid>
+          <Border Classes="divider"/>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.RefreshCw}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Share the clipboard with the phone" VerticalAlignment="Center"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding SyncEnabled}"/>
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.File}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Include pictures" VerticalAlignment="Center"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding ImagesEnabled}"/>
+          </Grid>
+          <Border Classes="divider"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox Text="{Binding SendText}" PlaceholderText="Type something to put on the phone's clipboard…" AcceptsReturn="False">
+              <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding SendCommand}"/>
+              </TextBox.KeyBindings>
+            </TextBox>
+            <Button Grid.Column="1" Classes="primary" Margin="8,0,0,0" Command="{Binding SendCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{x:Static vm:Icons.Send}" Size="14" StrokeThickness="2.2"/>
+                <TextBlock Text="Send" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+          </Grid>
+          <TextBlock Text="{Binding Status}" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="caption" Foreground="{StaticResource HibCyan}"/>
+        </StackPanel>
+      </Border>
+
+      <Grid ColumnDefinitions="*,Auto" Margin="8,4,0,0">
+        <TextBlock Text="HISTORY" Classes="label" VerticalAlignment="Center"/>
+        <Button Grid.Column="1" Classes="bare" Command="{Binding ClearCommand}" Padding="10,4">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <c:Icon Data="{x:Static vm:Icons.Wind}" Size="14"/>
+            <TextBlock Text="Clear history" FontSize="12.5" VerticalAlignment="Center"/>
           </StackPanel>
-          <ToggleSwitch Grid.Column="1" IsChecked="{Binding SyncEnabled}"/>
-        </Grid>
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Text="Include images" VerticalAlignment="Center"/>
-          <ToggleSwitch Grid.Column="1" IsChecked="{Binding ImagesEnabled}"/>
-        </Grid>
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBox Text="{Binding SendText}" PlaceholderText="Send text to the phone's clipboard…" AcceptsReturn="False"/>
-          <Button Grid.Column="1" Classes="accent" Content="Send" Margin="8,0,0,0" Command="{Binding SendCommand}"/>
-        </Grid>
-        <TextBlock Text="{Binding Status}" Classes="muted" FontSize="12"/>
-      </StackPanel>
-    </Border>
-    <TextBlock Grid.Row="2" Text="HISTORY" Classes="section"/>
-    <Panel Grid.Row="3">
-      <TextBlock Text="Nothing copied yet." Classes="muted" IsVisible="{Binding IsEmpty}"/>
-      <ScrollViewer IsVisible="{Binding !IsEmpty}">
-        <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,8,24">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ClipboardItemViewModel">
-              <Border Classes="card" Margin="0,0,0,8" Padding="14,12">
-                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Border Classes="pill">
-                      <TextBlock Text="{Binding Direction}" FontSize="11" Foreground="{StaticResource HibAccentBrush}"/>
-                    </Border>
-                    <TextBlock Text="{Binding Time}" Classes="caption" VerticalAlignment="Center"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Classes="soft" Content="Copy" Command="{Binding $parent[ItemsControl].((vm:ClipboardViewModel)DataContext).CopyCommand}" CommandParameter="{Binding}"/>
-                  <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Text}" TextWrapping="Wrap" MaxLines="6" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" IsVisible="{Binding IsText}"/>
-                  <Border Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Left" CornerRadius="10" ClipToBounds="True" Margin="0,8,0,0" MaxHeight="180" IsVisible="{Binding IsImage}">
-                    <Image Source="{Binding Image}" Stretch="Uniform"/>
+        </Button>
+      </Grid>
+      <TextBlock Text="Nothing copied yet." Classes="caption" Margin="8,0,0,0" IsVisible="{Binding IsEmpty}"/>
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ClipboardItemViewModel">
+            <Border Classes="card" Margin="0,0,0,8" Padding="14,12">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Border Classes="chip cyan" Padding="8,2">
+                    <TextBlock Text="{Binding Direction}" FontSize="11"/>
                   </Border>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-    </Panel>
-  </Grid>
+                  <TextBlock Text="{Binding Time}" Classes="faint" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button Grid.Column="1" Classes="icon small" ToolTip.Tip="Copy again"
+                        Command="{Binding $parent[ItemsControl].((vm:ClipboardViewModel)DataContext).CopyCommand}" CommandParameter="{Binding}">
+                  <c:Icon Data="{x:Static vm:Icons.Copy}" Size="13"/>
+                </Button>
+                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Text}" TextWrapping="Wrap" MaxLines="6" TextTrimming="CharacterEllipsis"
+                           Margin="0,8,0,0" IsVisible="{Binding IsText}"/>
+                <Border Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Left" CornerRadius="10" ClipToBounds="True" Margin="0,8,0,0"
+                        MaxHeight="180" IsVisible="{Binding IsImage}">
+                  <Image Source="{Binding Image}" Stretch="Uniform"/>
+                </Border>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

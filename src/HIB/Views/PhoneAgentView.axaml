@@ -1,16 +1,17 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
              xmlns:pa="using:HIB.Features.PhoneAgent"
              x:Class="HIB.Views.PhoneAgentView"
              x:DataType="vm:PhoneAgentViewModel">
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="32,28,32,20">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="22,0,22,16" MaxWidth="800">
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel>
-        <TextBlock Text="Phone Agent" Classes="h1"/>
-        <TextBlock Text="Tell it what to do; it operates your phone over ADB, step by step." Classes="muted"/>
+        <c:SectionHeader Title="Phone Agent" IconData="{x:Static vm:Icons.Bot}"/>
+        <TextBlock Text="Tell it what to do. It works your phone over ADB, step by step." Classes="caption" Margin="8,6,0,0"/>
       </StackPanel>
-      <Button Grid.Column="1" Classes="soft" Content="Model &amp; key" VerticalAlignment="Center" Command="{Binding ToggleSettingsCommand}"/>
+      <Button Grid.Column="1" Content="Model &amp; key" VerticalAlignment="Center" Command="{Binding ToggleSettingsCommand}"/>
     </Grid>
 
     <!-- provider / model / key -->
@@ -26,13 +27,13 @@
         </Grid>
         <Grid ColumnDefinitions="*,Auto,Auto,Auto">
           <TextBox Text="{Binding ApiKey}" PasswordChar="•" PlaceholderText="Paste API key"/>
-          <Button Grid.Column="1" Classes="accent" Content="Save" Margin="8,0,0,0" Command="{Binding SaveKeyCommand}"/>
-          <Button Grid.Column="2" Classes="soft" Content="Test" Margin="8,0,0,0" Command="{Binding TestKeyCommand}"/>
-          <Button Grid.Column="3" Classes="soft" Content="Remove" Margin="8,0,0,0" Command="{Binding RemoveKeyCommand}"/>
+          <Button Grid.Column="1" Classes="primary" Content="Save" Margin="8,0,0,0" Command="{Binding SaveKeyCommand}"/>
+          <Button Grid.Column="2" Content="Test" Margin="8,0,0,0" Command="{Binding TestKeyCommand}"/>
+          <Button Grid.Column="3" Content="Remove" Margin="8,0,0,0" Command="{Binding RemoveKeyCommand}"/>
         </Grid>
         <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Text="{Binding KeyStatus}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
-          <Button Grid.Column="1" Classes="icon-btn" Foreground="{StaticResource HibAccentBrush}" Content="{Binding KeyLinkText}" Command="{Binding GetKeyCommand}"/>
+          <TextBlock Text="{Binding KeyStatus}" IsVisible="{Binding KeyStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
+          <Button Grid.Column="1" Classes="link" Foreground="{StaticResource HibCyan}" Content="{Binding KeyLinkText}" Command="{Binding GetKeyCommand}"/>
         </Grid>
       </StackPanel>
     </Border>
@@ -48,17 +49,17 @@
             </TextBox.KeyBindings>
           </TextBox>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Top">
-            <Button Classes="accent" Content="Run" Command="{Binding RunCommand}" IsEnabled="{Binding Agent.CanRun}" IsVisible="{Binding !Agent.IsRunning}" MinHeight="40"/>
+            <Button Classes="primary" Content="Run" Command="{Binding RunCommand}" IsEnabled="{Binding Agent.CanRun}" IsVisible="{Binding !Agent.IsRunning}" MinHeight="40"/>
             <Button Classes="danger" Content="Stop" Command="{Binding StopCommand}" IsVisible="{Binding Agent.IsRunning}" MinHeight="40"/>
           </StackPanel>
         </Grid>
         <Grid ColumnDefinitions="Auto,*,Auto">
-          <ProgressBar IsIndeterminate="True" Width="18" Height="18" Classes="ring" IsVisible="{Binding Agent.IsRunning}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+          <c:Icon Data="{x:Static vm:Icons.LoaderCircle}" Size="16" Classes="spin cyan" IsVisible="{Binding Agent.IsRunning}" Margin="0,0,8,0" VerticalAlignment="Center"/>
           <TextBlock Grid.Column="1" Text="{Binding Agent.Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
           <TextBlock Grid.Column="2" Text="{Binding UsageText}" Classes="caption" VerticalAlignment="Center"/>
         </Grid>
-        <TextBlock Text="ADB isn't connected — open the Phone page first." Foreground="#FFD27A" FontSize="12" IsVisible="{Binding !AdbReady}"/>
-        <TextBlock Text="Add an API key under Model &amp; key (Gemini has a free tier)." Foreground="#FFD27A" FontSize="12" IsVisible="{Binding !Agent.HasApiKey}"/>
+        <TextBlock Text="ADB isn't connected. Connect it in Settings › Mirroring &amp; ADB." Foreground="{StaticResource HibWarning}" FontSize="12" IsVisible="{Binding !AdbReady}"/>
+        <TextBlock Text="Add an API key under Model &amp; key (Gemini has a free tier)." Foreground="{StaticResource HibWarning}" FontSize="12" IsVisible="{Binding !Agent.HasApiKey}"/>
       </StackPanel>
     </Border>
 
@@ -90,7 +91,7 @@
 
     <!-- question / confirmation bars -->
     <StackPanel Grid.Row="4" Spacing="10" Margin="0,10,0,0">
-      <Border Classes="card" BorderBrush="#6A5A2A" IsVisible="{Binding HasQuestion}">
+      <Border Classes="card warn" IsVisible="{Binding HasQuestion}">
         <StackPanel Spacing="8">
           <TextBlock Text="{Binding Agent.PendingQuestion}" FontWeight="SemiBold" TextWrapping="Wrap"/>
           <Grid ColumnDefinitions="*,Auto,Auto">
@@ -99,18 +100,18 @@
                 <KeyBinding Gesture="Enter" Command="{Binding SendAnswerCommand}"/>
               </TextBox.KeyBindings>
             </TextBox>
-            <Button Grid.Column="1" Classes="accent" Content="Answer" Margin="8,0,0,0" Command="{Binding SendAnswerCommand}"/>
-            <Button Grid.Column="2" Classes="soft" Content="Skip" Margin="8,0,0,0" Command="{Binding SkipQuestionCommand}"/>
+            <Button Grid.Column="1" Classes="primary" Content="Answer" Margin="8,0,0,0" Command="{Binding SendAnswerCommand}"/>
+            <Button Grid.Column="2" Content="Skip" Margin="8,0,0,0" Command="{Binding SkipQuestionCommand}"/>
           </Grid>
         </StackPanel>
       </Border>
-      <Border Classes="card" BorderBrush="#6A5A2A" IsVisible="{Binding HasConfirmation}">
+      <Border Classes="card warn" IsVisible="{Binding HasConfirmation}">
         <Grid ColumnDefinitions="*,Auto,Auto">
           <StackPanel>
-            <TextBlock Text="Approve this step?" Foreground="#FFD27A" FontWeight="SemiBold"/>
+            <TextBlock Text="Approve this step?" Foreground="{StaticResource HibWarning}" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding Agent.PendingConfirmation}" TextWrapping="Wrap"/>
           </StackPanel>
-          <Button Grid.Column="1" Classes="accent" Content="Approve" Margin="12,0,0,0" VerticalAlignment="Center" Command="{Binding ApproveCommand}"/>
+          <Button Grid.Column="1" Classes="primary" Content="Approve" Margin="12,0,0,0" VerticalAlignment="Center" Command="{Binding ApproveCommand}"/>
           <Button Grid.Column="2" Classes="danger" Content="Cancel" Margin="8,0,0,0" VerticalAlignment="Center" Command="{Binding DenyCommand}"/>
         </Grid>
       </Border>

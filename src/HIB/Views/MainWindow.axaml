@@ -1,75 +1,98 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:HIB.ViewModels"
+        xmlns:v="using:HIB.Views"
+        xmlns:c="using:HIB.Views.Controls"
         x:Class="HIB.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="H.I.B"
-        Width="1080" Height="720" MinWidth="820" MinHeight="560"
-        Background="{StaticResource HibBg}"
+        Width="1080" Height="720" MinWidth="860" MinHeight="620"
+        Background="{StaticResource HibInk}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="40"
         WindowStartupLocation="CenterScreen">
 
-  <Grid ColumnDefinitions="232,*">
-    <!-- Sidebar -->
-    <Border Grid.Column="0" Background="{StaticResource HibSidebar}" BorderBrush="{StaticResource HibStroke}" BorderThickness="0,0,1,0">
-      <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="14,18,14,14">
-        <StackPanel Orientation="Horizontal" Spacing="10" Margin="6,0,0,20">
-          <Border Width="34" Height="34" CornerRadius="10" ClipToBounds="True">
-            <Image Source="{Binding AppIcon}"/>
+  <Panel>
+    <!-- HIBAmbientBackground -->
+    <c:AmbientBackground/>
+
+    <!-- left column backdrop (sidebarGradient), behind the drag strip -->
+    <Border Width="286" HorizontalAlignment="Left" Background="{StaticResource HibSidebarFill}"
+            BorderBrush="#12FFFFFF" BorderThickness="0,0,1,0" IsHitTestVisible="False"
+            IsVisible="{Binding ShowLeftColumn}"/>
+
+    <!-- title bar drag area (window chrome is extended into the client area) -->
+    <Border x:Name="TitleStrip" Height="40" VerticalAlignment="Top" Background="Transparent"/>
+
+    <Grid ColumnDefinitions="Auto,*">
+      <!-- ===== left column ===== -->
+      <Panel Width="286" IsVisible="{Binding ShowLeftColumn}">
+        <!-- the linked phone -->
+        <Panel IsVisible="{Binding ShowPhoneColumn}">
+          <v:HomeView DataContext="{Binding Home}"/>
+        </Panel>
+
+        <!-- Settings: its own section list (SettingsSidebarView) -->
+        <Grid RowDefinitions="Auto,*,Auto" Margin="0,40,0,0" IsVisible="{Binding IsSettings}">
+          <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Margin="18,6,16,12"/>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Sections}" Margin="10,0,10,8">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:NavItem">
+                  <Button Classes="section" Classes.selected="{Binding IsSelected}"
+                          Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SelectCommand}"
+                          CommandParameter="{Binding}">
+                    <Grid ColumnDefinitions="Auto,*">
+                      <Border Width="28" Height="28" CornerRadius="8" Background="{StaticResource HibCyanSoft}">
+                        <c:Icon Data="{Binding IconPath}" Size="15" StrokeThickness="2.1" Foreground="{StaticResource HibCyan}"/>
+                      </Border>
+                      <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="1">
+                        <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"/>
+                        <TextBlock Text="{Binding Subtitle}" Classes="faint" FontSize="10.5" TextTrimming="CharacterEllipsis"
+                                   IsVisible="{Binding HasSubtitle}"/>
+                      </StackPanel>
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <Border Grid.Row="2" Classes="chip" HorizontalAlignment="Center" Margin="0,8,0,14" Padding="12,5">
+            <TextBlock Text="{Binding VersionText}" Classes="caption" FontSize="11"/>
           </Border>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="H.I.B" FontSize="17" FontWeight="Bold"/>
-            <TextBlock Text="{Binding DesktopName}" Classes="caption" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
-          </StackPanel>
-        </StackPanel>
+        </Grid>
+      </Panel>
 
-        <ItemsControl Grid.Row="1" ItemsSource="{Binding NavItems}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:NavItem">
-              <Button Classes="nav" Classes.selected="{Binding IsSelected}"
-                      Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SelectCommand}"
-                      CommandParameter="{Binding}">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                  <PathIcon Data="{Binding IconPath}" Width="17" Height="17" Margin="0,0,12,0"
-                            Foreground="{Binding $parent[Button].Foreground}"/>
-                  <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" FontSize="14"/>
-                  <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}">
-                    <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource HibOnAccent}" HorizontalAlignment="Center"/>
-                  </Border>
-                </Grid>
-              </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <ItemsControl Grid.Row="2" ItemsSource="{Binding FooterItems}" Margin="0,0,0,12">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:NavItem">
-              <Button Classes="nav" Classes.selected="{Binding IsSelected}"
-                      Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SelectCommand}"
-                      CommandParameter="{Binding}">
-                <Grid ColumnDefinitions="Auto,*">
-                  <PathIcon Data="{Binding IconPath}" Width="17" Height="17" Margin="0,0,12,0"
-                            Foreground="{Binding $parent[Button].Foreground}"/>
-                  <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" FontSize="14"/>
-                </Grid>
-              </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Border Grid.Row="3" Classes="card" Padding="12,10" CornerRadius="12">
-          <StackPanel Orientation="Horizontal" Spacing="9">
-            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
-                     Fill="{StaticResource HibMuted}" IsVisible="{Binding !IsConnected}"/>
-            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
-                     Fill="{StaticResource HibGood}" IsVisible="{Binding IsConnected}"/>
-            <TextBlock Text="{Binding StatusText}" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="160"/>
-          </StackPanel>
+      <!-- ===== right: floating tab pill + page ===== -->
+      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+        <Border Classes="glass" CornerRadius="22" Padding="4" HorizontalAlignment="Center" Margin="0,7,0,8"
+                Background="#1CFFFFFF" BoxShadow="0 6 20 0 #40000000">
+          <ItemsControl ItemsSource="{Binding Tabs}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="2"/>
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:NavItem">
+                <Button Classes="tab" Classes.selected="{Binding IsSelected}" ToolTip.Tip="{Binding Title}"
+                        Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SelectCommand}"
+                        CommandParameter="{Binding}">
+                  <Panel>
+                    <c:Icon Data="{Binding IconPath}" Size="19" StrokeThickness="1.8"/>
+                    <Border Classes="badge" IsVisible="{Binding HasBadge}" Margin="0,-9,-14,0"
+                            HorizontalAlignment="Right" VerticalAlignment="Top">
+                      <TextBlock Text="{Binding Badge}"/>
+                    </Border>
+                  </Panel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </Border>
-      </Grid>
-    </Border>
 
-    <!-- Content -->
-    <ContentControl Grid.Column="1" Content="{Binding CurrentContent}"/>
-  </Grid>
+        <ContentControl Grid.Row="1" Content="{Binding CurrentContent}"/>
+      </Grid>
+    </Grid>
+  </Panel>
 </Window>

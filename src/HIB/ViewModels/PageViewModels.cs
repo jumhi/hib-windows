@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -243,7 +244,10 @@ public static class ReceivedFiles
 // Pair
 // =====================================================================
 
-public sealed record DiscoveredPhoneItem(string Name, string Ips);
+public sealed record DiscoveredPhoneItem(string Name, string Ips)
+{
+    public IReadOnlyList<string> IpList { get; init; } = Array.Empty<string>();
+}
 
 public partial class PairViewModel : ViewModelBase
 {
@@ -268,9 +272,16 @@ public partial class PairViewModel : ViewModelBase
     [ObservableProperty] public partial bool ShowQrText { get; set; }
     [ObservableProperty] public partial string DiscoveryMode { get; set; } = "";
     [ObservableProperty] public partial string Status { get; set; } = "";
+    [ObservableProperty] public partial bool IsConnected { get; set; }
     public ObservableCollection<DiscoveredPhoneItem> Phones { get; } = new();
     public bool HasPhones => Phones.Count > 0;
+    public bool NoPhones => Phones.Count == 0;
     public bool FirewallSupported => FirewallHelper.IsSupported;
+    /// <summary>The server pill under the QR, like the Mac's "Ready".</summary>
+    public string ServerText => _app.Core.Link.IsListening ? "Ready" : "Stopped";
+    public bool IsReady => _app.Core.Link.IsListening;
+    public bool HasStatus => Status.Length > 0;
+    partial void OnStatusChanged(string value) => OnPropertyChanged(nameof(HasStatus));
 
     [RelayCommand]
     public void Refresh()
@@ -291,15 +302,19 @@ public partial class PairViewModel : ViewModelBase
     void RefreshStatus()
     {
         var link = _app.Core.Link;
-        ConnectionStatus = link.IsConnected && link.Device is { } d ? $"Connected to {d.Name}" : "Not connected — scan the code with H.I.B on your phone";
+        IsConnected = link.IsConnected;
+        ConnectionStatus = link.IsConnected && link.Device is { } d ? $"Connected to {d.Name}" : "Open H.I.B on your phone and scan this code";
+        OnPropertyChanged(nameof(ServerText));
+        OnPropertyChanged(nameof(IsReady));
     }
 
     void RefreshPhones()
     {
         Phones.Clear();
         foreach (var p in _app.Core.Udp?.Phones ?? Array.Empty<DiscoveredPhone>())
-            Phones.Add(new DiscoveredPhoneItem(p.Name, string.Join(", ", p.Ips)));
+            Phones.Add(new DiscoveredPhoneItem(p.Name, string.Join(", ", p.Ips)) { IpList = p.Ips });
         OnPropertyChanged(nameof(HasPhones));
+        OnPropertyChanged(nameof(NoPhones));
     }
 
     public static Bitmap? RenderQr(string text)
@@ -308,7 +323,7 @@ public partial class PairViewModel : ViewModelBase
         {
             using var gen = new QRCodeGenerator();
             using var data = gen.CreateQrCode(text, QRCodeGenerator.ECCLevel.M);
-            var png = new PngByteQRCode(data).GetGraphic(10, new byte[] { 24, 20, 36, 255 }, new byte[] { 255, 255, 255, 255 }, true);
+            var png = new PngByteQRCode(data).GetGraphic(10, new byte[] { 9, 12, 33, 255 }, new byte[] { 255, 255, 255, 255 }, true);
             return ImageUtil.FromBytes(png);
         }
         catch { return null; }
@@ -327,6 +342,25 @@ public partial class PairViewModel : ViewModelBase
     }
 
     [RelayCommand] void ToggleQrText() => ShowQrText = !ShowQrText;
+
+    /// <summary>Asks one phone found on the network to connect (its H.I.B app must be open).</summary>
+    [RelayCommand]
+    async Task ConnectTo(DiscoveredPhoneItem? phone)
+    {
+        if (phone is null || phone.IpList.Count == 0) return;
+        Status = $"Asking {phone.Name} to connect…";
+        var ok = await HIB.Core.Discovery.WakeUpClient.WakeAsync(phone.IpList, _app.Core.Link.Port, _app.Core.Link.DesktopName);
+        Status = ok ? $"{phone.Name} answered. If it doesn't connect, scan the code once." : $"{phone.Name} didn't answer. Scan the code instead.";
+    }
+
+    [RelayCommand]
+    async Task CopyCode()
+    {
+        var cb = _app.MainWindow?.Clipboard;
+        if (cb is null) return;
+        await Avalonia.Input.Platform.ClipboardExtensions.SetTextAsync(cb, QrText);
+        Status = "Pairing code copied.";
+    }
 
     [RelayCommand]
     async Task Wake()
@@ -399,6 +433,27 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] public partial string LogText { get; set; } = "";
     public bool AutoStartSupported => AutoStart.IsSupported;
     public string DataDir => _app.Core.Options.DataDir;
+    public string DesktopName => _app.Core.Link.DesktopName;
+    public string DownloadsPath => AppPaths.DownloadsDir;
+
+    // TODO(engine merge): AppSettings.ShowFlickShelf (the top-edge Flick shelf, SPACE.md §5) is added by the
+    // engine branch and doesn't exist on main yet. Until then this looks the property up at runtime and the
+    // Flick section only shows the toggle when it's there. After the merge, replace the reflection with
+    // `_app.Core.Settings.ShowFlickShelf` and drop HasFlickShelfSetting.
+    static readonly System.Reflection.PropertyInfo? ShelfProperty =
+        typeof(AppSettings).GetProperty("ShowFlickShelf", typeof(bool));
+    public bool HasFlickShelfSetting => ShelfProperty is not null;
+    public bool ShowFlickShelf
+    {
+        get => ShelfProperty?.GetValue(_app.Core.Settings) is true;
+        set
+        {
+            if (ShelfProperty is null || ShowFlickShelf == value) return;
+            ShelfProperty.SetValue(_app.Core.Settings, value);
+            _app.Core.Settings.Save();
+            OnPropertyChanged();
+        }
+    }
 
     partial void OnNotificationToastsChanged(bool value) => Save(s => s.NotificationToasts = value);
     partial void OnSilentToastsChanged(bool value) => Save(s => s.SilentToasts = value);
@@ -455,6 +510,28 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand] void StopTeaching() { _app.Flick.CancelTeaching(); RefreshFlick(); }
     [RelayCommand] void ForgetScreens() { _app.Flick.Picker.ForgetAims(); RefreshFlick(); }
     [RelayCommand] void OpenDataFolder() => PlatformShell.Open(_app.Core.Options.DataDir);
+}
+
+// =====================================================================
+// Settings sections that share SettingsViewModel (like the Mac's per-section settings views)
+// =====================================================================
+
+/// <summary>"This PC": name, startup, discovery, data folder, diagnostics.</summary>
+public sealed class GeneralSettingsViewModel(SettingsViewModel settings) : ViewModelBase
+{
+    public SettingsViewModel S { get; } = settings;
+}
+
+/// <summary>"Notifications": pop-ups and call pop-ups on this PC.</summary>
+public sealed class AlertSettingsViewModel(SettingsViewModel settings) : ViewModelBase
+{
+    public SettingsViewModel S { get; } = settings;
+}
+
+/// <summary>"Flick": links, several screens and the Flick shelf.</summary>
+public sealed class FlickSettingsViewModel(SettingsViewModel settings) : ViewModelBase
+{
+    public SettingsViewModel S { get; } = settings;
 }
 
 // =====================================================================

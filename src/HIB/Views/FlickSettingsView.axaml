@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
+             x:Class="HIB.Views.FlickSettingsView"
+             x:DataType="vm:FlickSettingsViewModel">
+  <!-- Settings › Flick (the Mac's FlickSettingsView) -->
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="Flick" IconData="{x:Static vm:Icons.Hand}"/>
+
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Classes="tile" Margin="0,0,14,0">
+              <c:Icon Data="{x:Static vm:Icons.Hand}"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+              <TextBlock Text="Throw things between your devices" Classes="headline"/>
+              <TextBlock Classes="caption" TextWrapping="Wrap"
+                         Text="On the phone, share a photo, video, file or link to Flick and throw it up toward a device. It flies onto that device's screen. From this PC, drop files on a device in the Devices tab."/>
+            </StackPanel>
+          </Grid>
+          <Border Classes="divider"/>
+
+          <Grid ColumnDefinitions="Auto,*">
+            <c:Icon Data="{x:Static vm:Icons.Folder}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Flicked files are saved to"/>
+              <TextBlock Text="{Binding S.DownloadsPath}" Classes="faint" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Link}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Open flicked links automatically" VerticalAlignment="Center"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.AutoOpenLinks}"/>
+          </Grid>
+          <!-- the top-edge Flick shelf (shown once the engine adds AppSettings.ShowFlickShelf) -->
+          <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding S.HasFlickShelfSetting}">
+            <c:Icon Data="{x:Static vm:Icons.Download}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Flick shelf at the top of the screen"/>
+              <TextBlock Text="Drag a file to the top edge and drop it on a device." Classes="faint"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.ShowFlickShelf}"/>
+          </Grid>
+
+          <Border Classes="divider"/>
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <c:Icon Data="{x:Static vm:Icons.Monitor}" Classes="muted"/>
+              <TextBlock Text="Several screens" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="Flick up-left or up-right to send a card to the screen on that side. To aim instead, teach Flick where your screens are once: point the phone at each screen when asked and flick anything."/>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding S.FlickStatus}" Classes="caption" Foreground="{StaticResource HibText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+                <Button Content="Forget" Command="{Binding S.ForgetScreensCommand}"/>
+                <Button Classes="primary" Content="Teach my screens" Command="{Binding S.TeachScreensCommand}" IsVisible="{Binding !S.IsTeaching}"/>
+                <Button Content="Cancel" Command="{Binding S.StopTeachingCommand}" IsVisible="{Binding S.IsTeaching}"/>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <Border Classes="divider"/>
+          <StackPanel Spacing="6">
+            <TextBlock Text="On this PC" FontWeight="SemiBold"/>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="Drag a landed card into Explorer, WhatsApp, Outlook or any app. Click it to open the file. Cards fade away after a few seconds (hover to keep one). Plain text is copied to the clipboard."/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

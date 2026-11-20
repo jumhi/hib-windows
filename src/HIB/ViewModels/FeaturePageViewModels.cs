@@ -35,12 +35,12 @@ public sealed class StepKindBrushConverter : IValueConverter
     public static readonly StepKindBrushConverter Instance = new();
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        PhoneAgentStepKind.User => new SolidColorBrush(Color.Parse("#B79CFF")),
+        PhoneAgentStepKind.User => new SolidColorBrush(Color.Parse("#20D9FF")),
         PhoneAgentStepKind.Action => new SolidColorBrush(Color.Parse("#7FB7FF")),
-        PhoneAgentStepKind.Done => new SolidColorBrush(Color.Parse("#7EE0A8")),
-        PhoneAgentStepKind.Error => new SolidColorBrush(Color.Parse("#FF7A8A")),
-        PhoneAgentStepKind.Question or PhoneAgentStepKind.Confirmation => new SolidColorBrush(Color.Parse("#FFD27A")),
-        _ => new SolidColorBrush(Color.Parse("#9E97B0")),
+        PhoneAgentStepKind.Done => new SolidColorBrush(Color.Parse("#BAFF38")),
+        PhoneAgentStepKind.Error => new SolidColorBrush(Color.Parse("#FF5C70")),
+        PhoneAgentStepKind.Question or PhoneAgentStepKind.Confirmation => new SolidColorBrush(Color.Parse("#FFC14D")),
+        _ => new SolidColorBrush(Color.Parse("#8E95B2")),
     };
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
@@ -75,6 +75,17 @@ public sealed partial class PhoneAppItem : ObservableObject
     public Bitmap? Icon { get; }
     public bool HasIcon => Icon is not null;
     public string Initial => string.IsNullOrEmpty(Name) ? "?" : Name[..1].ToUpperInvariant();
+    /// <summary>Notifications from this app aren't forwarded.</summary>
+    public bool IsMuted => !App.Listening;
+    public string MuteLabel => IsMuted ? "Unmute app" : "Mute app";
+    /// <summary>First search match (Enter opens it).</summary>
+    [ObservableProperty] public partial bool IsHighlighted { get; set; }
+    [ObservableProperty] public partial bool IsLaunching { get; set; }
+
+    /// <summary>The Apps tab that shows this tile (its context menu acts through it).</summary>
+    internal AppsViewModel? Owner { get; set; }
+    [RelayCommand] Task Open() => Owner?.LaunchCommand.ExecuteAsync(this) ?? Task.CompletedTask;
+    [RelayCommand] Task ToggleMute() => Owner?.ToggleMuteCommand.ExecuteAsync(this) ?? Task.CompletedTask;
 }
 
 public partial class PhoneViewModel : ViewModelBase

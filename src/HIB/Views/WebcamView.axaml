@@ -1,18 +1,19 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
              x:Class="HIB.Views.WebcamView"
              x:DataType="vm:WebcamViewModel">
-  <ScrollViewer>
-    <StackPanel Margin="32,28" Spacing="14" MaxWidth="960">
-      <TextBlock Text="Webcam" Classes="h1"/>
-      <TextBlock Text="Use the phone's camera on this PC: as a real USB webcam, or wirelessly in a window you can share in calls." Classes="muted" TextWrapping="Wrap"/>
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="Webcam" IconData="{x:Static vm:Icons.Webcam}"/>
+      <TextBlock Text="Use the phone's camera on this PC: as a real USB webcam, or wirelessly in a window you can share in calls." Classes="caption" Margin="8,-6,8,0" TextWrapping="Wrap"/>
 
       <!-- USB webcam -->
       <Border Classes="hero">
         <Grid ColumnDefinitions="Auto,*">
-          <Border Width="72" Height="72" CornerRadius="36" Background="{StaticResource HibAccentSoft}" Margin="0,0,20,0" VerticalAlignment="Top">
-            <PathIcon Width="30" Height="30" Foreground="{StaticResource HibAccentBrush}"
+          <Border Width="72" Height="72" CornerRadius="36" Background="{StaticResource HibCyanSoft}" Margin="0,0,20,0" VerticalAlignment="Top">
+            <PathIcon Width="30" Height="30" Foreground="{StaticResource HibCyan}"
                       Data="M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z"/>
           </Border>
           <StackPanel Grid.Column="1" Spacing="6">
@@ -21,11 +22,11 @@
                        Text="Android 14 and later can act as a normal USB camera. Zoom, Teams, Meet and OBS see it like any webcam, with no extra software."/>
             <TextBlock Text="{Binding UsbStatus}" TextWrapping="Wrap"/>
             <WrapPanel Margin="0,6,0,0">
-              <Button Classes="accent" Content="Use phone as webcam" Margin="0,0,8,8" Command="{Binding StartUsbCommand}" IsEnabled="{Binding UsbCanStart}"/>
-              <Button Classes="soft" Content="Stop webcam" Margin="0,0,8,8" Command="{Binding StopUsbCommand}" IsEnabled="{Binding UsbCanStop}"/>
-              <Button Classes="soft" Content="Check again" Margin="0,0,8,8" Command="{Binding CheckUsbCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+              <Button Classes="primary" Content="Use phone as webcam" Margin="0,0,8,8" Command="{Binding StartUsbCommand}" IsEnabled="{Binding UsbCanStart}"/>
+              <Button Content="Stop webcam" Margin="0,0,8,8" Command="{Binding StopUsbCommand}" IsEnabled="{Binding UsbCanStop}"/>
+              <Button Content="Check again" Margin="0,0,8,8" Command="{Binding CheckUsbCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
             </WrapPanel>
-            <TextBlock Text="{Binding Camera.UsbMessage}" Classes="muted" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Camera.UsbMessage}" IsVisible="{Binding Camera.UsbMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="muted" TextWrapping="Wrap"/>
             <TextBlock Classes="caption" TextWrapping="Wrap"
                        Text="• Plug the phone into this PC with a USB cable first. H.I.B switches it over Wireless debugging, so keep that connected to stop it from here.&#10;• While it's on, the phone shows a Webcam notification. Tap it for a preview where you switch front/back camera, zoom, and turn the phone for landscape or portrait.&#10;• In your video app, pick the phone (often called &quot;Android Webcam&quot;) as the camera.&#10;• Stop webcam puts USB back to file transfer or charging. You can also change it from the phone's USB notification."/>
           </StackPanel>
@@ -52,12 +53,12 @@
           <CheckBox Content="Borderless window" IsChecked="{Binding Borderless}"/>
           <CheckBox Content="Keep on top" IsChecked="{Binding OnTop}"/>
           <WrapPanel>
-            <Button Classes="accent" Content="{Binding CameraButton}" Margin="0,0,8,8" Command="{Binding ToggleCameraCommand}" IsEnabled="{Binding CameraCanToggle}"/>
-            <Button Classes="soft" Content="List cameras" Margin="0,0,8,8" Command="{Binding ListCamerasCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+            <Button Classes="primary" Content="{Binding CameraButton}" Margin="0,0,8,8" Command="{Binding ToggleCameraCommand}" IsEnabled="{Binding CameraCanToggle}"/>
+            <Button Content="List cameras" Margin="0,0,8,8" Command="{Binding ListCamerasCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
           </WrapPanel>
           <TextBlock Classes="caption" TextWrapping="Wrap" Text="Changes apply the next time the camera window opens. Drag a borderless window by its picture."/>
-          <TextBlock Text="{Binding Camera.LastError}" Foreground="{StaticResource HibDanger}" TextWrapping="Wrap" FontSize="12"/>
-          <SelectableTextBlock Text="{Binding Camera.CameraList}" FontFamily="Consolas, Menlo, monospace" FontSize="11.5" Foreground="{StaticResource HibMuted}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding Camera.LastError}" IsVisible="{Binding Camera.LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Foreground="{StaticResource HibDanger}" TextWrapping="Wrap" FontSize="12"/>
+          <SelectableTextBlock Text="{Binding Camera.CameraList}" IsVisible="{Binding Camera.CameraList, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="mono" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
 
@@ -70,7 +71,7 @@
           <StackPanel Spacing="6" IsVisible="{Binding ObsInstalled}">
             <TextBlock TextWrapping="Wrap" FontSize="12"
                        Text="1. In OBS, add a source: Window Capture → &quot;[scrcpy.exe]: H.I.B Camera&quot;.&#10;2. Click Start Virtual Camera.&#10;3. In Zoom, Teams or Meet, choose &quot;OBS Virtual Camera&quot;."/>
-            <Button Classes="soft" Content="Open OBS" HorizontalAlignment="Left" Command="{Binding OpenObsCommand}"/>
+            <Button Content="Open OBS" HorizontalAlignment="Left" Command="{Binding OpenObsCommand}"/>
           </StackPanel>
           <TextBlock Classes="caption" IsVisible="{Binding ObsMissing}" TextWrapping="Wrap" Text="OBS Studio isn't installed. It's free from obsproject.com."/>
         </StackPanel>

@@ -1,0 +1,196 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
+             x:Class="HIB.Views.DevicesView"
+             x:DataType="vm:DevicesViewModel">
+  <!-- Devices (SPACE.md §5): the phone, every other computer and, small and last, this PC.
+       Each card is a drop target: drop files on it to send them there. -->
+  <UserControl.Styles>
+    <Style Selector="Border.devcard">
+      <Setter Property="Width" Value="366"/>
+      <Setter Property="Margin" Value="0,0,14,14"/>
+      <Setter Property="Padding" Value="16,14"/>
+    </Style>
+    <Style Selector="Border.devcard.offline">
+      <Setter Property="Opacity" Value="0.62"/>
+    </Style>
+    <Style Selector="Border.devcard.inuse">
+      <Setter Property="BoxShadow" Value="0 8 34 0 #2EBAFF38"/>
+      <Setter Property="BorderBrush" Value="#66BAFF38"/>
+    </Style>
+    <Style Selector="Border.devtile">
+      <Setter Property="Width" Value="48"/>
+      <Setter Property="Height" Value="48"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Background" Value="{StaticResource HibCyanSoft}"/>
+    </Style>
+    <Style Selector="Button.act">
+      <Setter Property="Padding" Value="11,6"/>
+      <Setter Property="FontSize" Value="12.5"/>
+      <Setter Property="Margin" Value="0,0,6,6"/>
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer Padding="22,0,8,24">
+    <StackPanel Spacing="14">
+      <!-- header -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="3">
+          <TextBlock Text="YOUR DEVICES" Classes="label"/>
+          <TextBlock Text="{Binding Summary}" Classes="caption" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Border Grid.Column="1" Classes="chip lime" Padding="12,6" VerticalAlignment="Center" Margin="0,0,14,0"
+                IsVisible="{Binding HasPlayingElsewhere}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <c:Icon Data="{x:Static vm:Icons.Music}" Size="14" Foreground="{StaticResource HibLime}"/>
+            <TextBlock Text="{Binding PlayingOnText}" FontSize="12.5" VerticalAlignment="Center"/>
+            <Button Classes="link" Content="Play here" Padding="6,1" FontSize="12.5" Command="{Binding ThisPc.TogglePlayCommand}"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- no phone yet -->
+      <Border Classes="panel" Padding="22" IsVisible="{Binding IsEmpty}" MaxWidth="520" HorizontalAlignment="Left">
+        <Grid ColumnDefinitions="Auto,*">
+          <Border Classes="tile" Margin="0,0,16,0">
+            <c:Icon Data="{x:Static vm:Icons.MonitorSmartphone}"/>
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="6">
+            <TextBlock Text="Pair your phone first" Classes="headline"/>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="Your phone introduces your computers to each other. Once it's paired, it and every computer it knows show up here."/>
+            <Button Classes="primary" Content="Pair a phone" HorizontalAlignment="Left" Margin="0,4,0,0" Command="{Binding OpenPairCommand}"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- the phone, then other computers -->
+      <ItemsControl ItemsSource="{Binding Devices}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:DeviceCardViewModel">
+            <Border Classes="panel devcard" Classes.offline="{Binding IsOffline}" Classes.inuse="{Binding IsInUse}"
+                    DragDrop.AllowDrop="True">
+              <Panel>
+                <StackPanel Spacing="12">
+                  <!-- icon, name, model -->
+                  <Grid ColumnDefinitions="Auto,*">
+                    <Border Classes="devtile">
+                      <c:Icon Data="{Binding KindIcon}" Size="24" Classes="cyan" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="2">
+                      <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}"/>
+                      <TextBlock Text="{Binding Model}" Classes="caption" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </Grid>
+
+                  <!-- status (Connected / In use / Offline), route, battery, playing -->
+                  <WrapPanel>
+                    <Border Classes="chip" Classes.lime="{Binding IsInUse}" Margin="0,0,6,4">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Width="7" Height="7" CornerRadius="3.5" VerticalAlignment="Center" Background="{StaticResource HibLime}"
+                                BoxShadow="0 0 8 0 #B3BAFF38" IsVisible="{Binding IsOnline}"/>
+                        <Border Width="7" Height="7" CornerRadius="3.5" VerticalAlignment="Center" Background="{StaticResource HibFaint}"
+                                IsVisible="{Binding IsOffline}"/>
+                        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Border>
+                    <Border Classes="chip cyan" Margin="0,0,6,4" IsVisible="{Binding HasRoute}" ToolTip.Tip="How files get there">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <c:Icon Data="{Binding RouteIcon}" Size="12" Classes="cyan" StrokeThickness="2.2"/>
+                        <TextBlock Text="{Binding RouteText}"/>
+                      </StackPanel>
+                    </Border>
+                    <Border Classes="chip" Margin="0,0,6,4" IsVisible="{Binding HasBattery}">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <c:Icon Data="{Binding BatteryIcon}" Size="14" StrokeThickness="2"/>
+                        <TextBlock Text="{Binding BatteryText}"/>
+                      </StackPanel>
+                    </Border>
+                    <Border Classes="chip lime" Margin="0,0,6,4" IsVisible="{Binding IsPlaying}">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <c:Icon Data="{x:Static vm:Icons.Music}" Size="12" Foreground="{StaticResource HibLime}" StrokeThickness="2.2"/>
+                        <TextBlock Text="Playing"/>
+                      </StackPanel>
+                    </Border>
+                  </WrapPanel>
+
+                  <!-- actions -->
+                  <TextBlock Text="{Binding OfflineHint}" Classes="faint" TextWrapping="Wrap"
+                             IsVisible="{Binding IsOffline}"/>
+                  <WrapPanel IsVisible="{Binding IsOnline}">
+                    <Button Classes="act primary" Command="{Binding SendFilesCommand}" IsEnabled="{Binding CanReceive}" ToolTip.Tip="{Binding SendFilesTip}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <c:Icon Data="{x:Static vm:Icons.Share}" Size="14" StrokeThickness="2.2"/>
+                        <TextBlock Text="Send files…" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                    <Button Classes="act" Command="{Binding SendClipboardCommand}" IsEnabled="{Binding CanReceive}" ToolTip.Tip="Send what you copied on this PC">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <c:Icon Data="{x:Static vm:Icons.Clipboard}" Size="14"/>
+                        <TextBlock Text="Send clipboard" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                    <Button Classes="act" Command="{Binding RingCommand}" IsVisible="{Binding IsPhone}" ToolTip.Tip="Make the phone ring, even on silent">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <c:Icon Data="{x:Static vm:Icons.BellRing}" Size="14"/>
+                        <TextBlock Text="{Binding RingLabel}" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                  </WrapPanel>
+                  <TextBlock Text="{Binding Status}" Classes="caption" Foreground="{StaticResource HibCyan}" TextWrapping="Wrap" Margin="0,-6,0,0" IsVisible="{Binding HasStatus}"/>
+                </StackPanel>
+
+                <!-- drop highlight -->
+                <Border CornerRadius="16" Background="#D9101640" Margin="-8,-6" IsVisible="{Binding IsDropTarget}" IsHitTestVisible="False">
+                  <Panel>
+                    <Rectangle RadiusX="16" RadiusY="16" Stroke="{StaticResource HibCyan}" StrokeThickness="1.6" StrokeDashArray="5,4"/>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+                      <c:Icon Data="{x:Static vm:Icons.Download}" Size="26" Classes="cyan" HorizontalAlignment="Center"/>
+                      <TextBlock Text="{Binding DropText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="280"/>
+                    </StackPanel>
+                  </Panel>
+                </Border>
+              </Panel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- this PC: small and last -->
+      <StackPanel Spacing="8" DataContext="{Binding ThisPc}" x:DataType="vm:DeviceCardViewModel">
+        <TextBlock Text="THIS PC" Classes="label"/>
+        <Border Classes="glass" Width="366" HorizontalAlignment="Left" Padding="14,10" CornerRadius="18">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <Border Classes="devtile" Width="36" Height="36" CornerRadius="11">
+                <c:Icon Data="{x:Static vm:Icons.Monitor}" Size="18" Classes="cyan" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding StatusText}" Classes="faint"/>
+              </StackPanel>
+              <Border Grid.Column="2" Classes="chip lime" VerticalAlignment="Center" IsVisible="{Binding IsPlaying}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                  <c:Icon Data="{x:Static vm:Icons.Music}" Size="12" Foreground="{StaticResource HibLime}" StrokeThickness="2.2"/>
+                  <TextBlock Text="Playing"/>
+                </StackPanel>
+              </Border>
+            </Grid>
+            <Button Classes="act" HorizontalAlignment="Left" Margin="0" Command="{Binding TogglePlayCommand}"
+                    ToolTip.Tip="The phone's sound comes out of this PC (it stops on other computers)">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{Binding PlayIcon}" Size="14"/>
+                <TextBlock Text="{Binding PlayLabel}" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <TextBlock Text="{Binding Status}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasStatus}"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

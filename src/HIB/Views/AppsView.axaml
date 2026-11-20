@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
+             x:Class="HIB.Views.AppsView"
+             x:DataType="vm:AppsViewModel">
+  <!-- The Mac's AppGridView: glass app tiles, a floating search bar, "Press ⏎ to launch" -->
+  <UserControl.Styles>
+    <Style Selector="Button.app">
+      <Setter Property="Width" Value="92"/>
+      <Setter Property="Height" Value="96"/>
+      <Setter Property="Padding" Value="6,8"/>
+      <Setter Property="Margin" Value="0,0,12,12"/>
+      <Setter Property="CornerRadius" Value="15"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="#14FFFFFF"/>
+    </Style>
+    <Style Selector="Button.app.hit">
+      <Setter Property="BorderBrush" Value="{StaticResource HibCyan}"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+    <Style Selector="Button.app.busy">
+      <Setter Property="Opacity" Value="0.45"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <!-- empty -->
+    <StackPanel IsVisible="{Binding IsEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Margin="0,0,0,40">
+      <c:Icon Data="{x:Static vm:Icons.LayoutGrid}" Size="40" Classes="cyan" StrokeThickness="1.5" HorizontalAlignment="Center"/>
+      <TextBlock Text="No apps yet" FontSize="15" FontWeight="Medium" HorizontalAlignment="Center"/>
+      <TextBlock Text="Your phone sends its app list after it connects." Classes="caption" HorizontalAlignment="Center"/>
+    </StackPanel>
+
+    <ScrollViewer IsVisible="{Binding HasApps}" Padding="22,4,10,110">
+      <StackPanel>
+        <TextBlock Text="No app matches." Classes="caption" HorizontalAlignment="Center" Margin="0,30,0,0" IsVisible="{Binding NoMatches}"/>
+        <ItemsControl ItemsSource="{Binding Apps}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PhoneAppItem">
+              <Button Classes="app" Classes.hit="{Binding IsHighlighted}" Classes.busy="{Binding IsLaunching}" ToolTip.Tip="{Binding Name}"
+                      Command="{Binding $parent[ItemsControl].((vm:AppsViewModel)DataContext).LaunchCommand}" CommandParameter="{Binding}">
+                <Button.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Open in a window" Command="{Binding OpenCommand}"/>
+                    <MenuItem Header="{Binding MuteLabel}" Command="{Binding ToggleMuteCommand}"/>
+                  </ContextMenu>
+                </Button.ContextMenu>
+                <Panel>
+                  <StackPanel Spacing="8">
+                    <Border Width="48" Height="48" CornerRadius="10" ClipToBounds="True" HorizontalAlignment="Center">
+                      <Panel>
+                        <Border Background="{StaticResource HibCyanSoft}" IsVisible="{Binding !HasIcon}"/>
+                        <Image Source="{Binding Icon}" IsVisible="{Binding HasIcon}"/>
+                        <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasIcon}" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource HibCyan}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Panel>
+                    </Border>
+                    <TextBlock Text="{Binding Name}" FontSize="11.5" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="78"
+                               HorizontalAlignment="Center"/>
+                  </StackPanel>
+                  <c:Icon Data="{x:Static vm:Icons.BellOff}" Size="11" Classes="muted" HorizontalAlignment="Right" VerticalAlignment="Top"
+                          IsVisible="{Binding IsMuted}" ToolTip.Tip="Notifications muted"/>
+                </Panel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- hint chip + floating search bar -->
+    <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,18" IsVisible="{Binding HasApps}">
+      <Border Classes="chip" HorizontalAlignment="Center" IsVisible="{Binding HasStatus}" Padding="12,4">
+        <TextBlock Text="{Binding Status}" FontSize="11.5" Foreground="{StaticResource HibWarning}"/>
+      </Border>
+      <Border Classes="chip" HorizontalAlignment="Center" IsVisible="{Binding HasSearch}" Padding="10,4">
+        <TextBlock Text="Press ⏎ to launch" FontSize="10.5" Foreground="{StaticResource HibMuted}"/>
+      </Border>
+      <Border Classes="glass" Width="280" Padding="12,0,6,0" Background="#E0161C40" BoxShadow="0 6 18 0 #40000000">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <c:Icon Data="{x:Static vm:Icons.Search}" Size="14" Classes="muted"/>
+          <TextBox x:Name="SearchBox" Grid.Column="1" Text="{Binding SearchText}" PlaceholderText="Search Apps"
+                   Background="Transparent" BorderThickness="0" FontSize="12.5" Margin="4,0" MinHeight="34" VerticalContentAlignment="Center">
+            <TextBox.Styles>
+              <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+              </Style>
+              <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+              </Style>
+            </TextBox.Styles>
+            <TextBox.KeyBindings>
+              <KeyBinding Gesture="Enter" Command="{Binding LaunchFirstCommand}"/>
+              <KeyBinding Gesture="Escape" Command="{Binding ClearSearchCommand}"/>
+            </TextBox.KeyBindings>
+          </TextBox>
+          <Button Grid.Column="2" Classes="icon small bare" ToolTip.Tip="Clear" Command="{Binding ClearSearchCommand}" IsVisible="{Binding HasSearch}">
+            <c:Icon Data="{x:Static vm:Icons.CircleX}" Size="14" Classes="muted"/>
+          </Button>
+        </Grid>
+      </Border>
+    </StackPanel>
+  </Panel>
+</UserControl>

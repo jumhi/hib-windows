@@ -1,13 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
              xmlns:cr="using:HIB.Features.CallRelay"
              x:Class="HIB.Views.CallsView"
              x:DataType="vm:CallsViewModel">
-  <ScrollViewer>
-    <StackPanel Margin="32,28" Spacing="14" MaxWidth="960">
-      <TextBlock Text="Calls" Classes="h1"/>
-      <TextBlock Text="Make, answer and end phone calls from this PC, and hear the call on the PC's speakers or headphones." Classes="muted" TextWrapping="Wrap"/>
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="Calls" IconData="{x:Static vm:Icons.Phone}"/>
+      <TextBlock Text="Make, answer and end phone calls from this PC, and hear the call on the PC's speakers or headphones." Classes="caption" Margin="8,-6,8,0" TextWrapping="Wrap"/>
 
       <!-- dialer -->
       <Border Classes="hero">
@@ -15,7 +16,7 @@
           <TextBlock Text="Dial" Classes="h2"/>
           <Grid ColumnDefinitions="*,Auto">
             <TextBox Text="{Binding Number}" PlaceholderText="Phone number" FontSize="18" MaxLength="60"/>
-            <Button Grid.Column="1" Classes="accent" Content="Call" Margin="8,0,0,0" MinWidth="90" Command="{Binding CallCommand}" IsEnabled="{Binding CanCall}" IsDefault="True"/>
+            <Button Grid.Column="1" Classes="primary" Content="Call" Margin="8,0,0,0" MinWidth="90" Command="{Binding CallCommand}" IsEnabled="{Binding CanCall}" IsDefault="True"/>
           </Grid>
           <CheckBox Content="Hear this call on this PC" IsChecked="{Binding HearThisCall}"/>
           <TextBox Text="{Binding ContactQuery}" PlaceholderText="Search contacts…"/>
@@ -23,7 +24,7 @@
           <ItemsControl ItemsSource="{Binding Calls.Contacts}" IsVisible="{Binding HasContacts}" MaxHeight="300">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="cr:PhoneContact">
-                <Button Classes="nav" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,2"
+                <Button Classes="section" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,2"
                         Command="{Binding $parent[ItemsControl].((vm:CallsViewModel)DataContext).PickContactCommand}" CommandParameter="{Binding}">
                   <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
@@ -33,7 +34,7 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <TextBlock Text="{Binding Calls.Status}" Classes="muted" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding Calls.Status}" IsVisible="{Binding Calls.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="muted" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
 
@@ -45,9 +46,9 @@
             <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
                        Text="Uses the H.I.B link when it's connected, otherwise ADB. &quot;Answer here&quot; answers and plays the call on this PC."/>
             <WrapPanel IsEnabled="{Binding CanControl}">
-              <Button Classes="accent" Content="Answer here" Margin="0,0,8,8" Command="{Binding AnswerHereCommand}"/>
-              <Button Classes="soft" Content="Answer" Margin="0,0,8,8" Command="{Binding AnswerCommand}"/>
-              <Button Classes="soft" Content="Decline" Margin="0,0,8,8" Command="{Binding DeclineCommand}"/>
+              <Button Classes="primary" Content="Answer here" Margin="0,0,8,8" Command="{Binding AnswerHereCommand}"/>
+              <Button Content="Answer" Margin="0,0,8,8" Command="{Binding AnswerCommand}"/>
+              <Button Content="Decline" Margin="0,0,8,8" Command="{Binding DeclineCommand}"/>
               <Button Classes="danger" Content="End call" Margin="0,0,8,8" Command="{Binding EndCommand}"/>
             </WrapPanel>
           </StackPanel>
@@ -62,8 +63,8 @@
               <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoHear}" VerticalAlignment="Top"/>
             </Grid>
             <TextBlock Text="{Binding AudioStatus}" TextWrapping="Wrap"/>
-            <Button Classes="soft" Content="{Binding AudioButton}" HorizontalAlignment="Left" Command="{Binding ToggleAudioCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
-            <TextBlock Text="{Binding Audio.LastError}" Foreground="{StaticResource HibDanger}" TextWrapping="Wrap" FontSize="12"/>
+            <Button Content="{Binding AudioButton}" HorizontalAlignment="Left" Command="{Binding ToggleAudioCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+            <TextBlock Text="{Binding Audio.LastError}" IsVisible="{Binding Audio.LastError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Foreground="{StaticResource HibDanger}" TextWrapping="Wrap" FontSize="12"/>
           </StackPanel>
         </Border>
       </Grid>

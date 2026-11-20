@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
+             x:Class="HIB.Views.GeneralSettingsView"
+             x:DataType="vm:GeneralSettingsViewModel">
+  <!-- Settings › This PC (the Mac's "My Mac") -->
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="This PC" IconData="{x:Static vm:Icons.Monitor}"/>
+
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Classes="tile" Margin="0,0,14,0">
+              <c:Icon Data="{x:Static vm:Icons.Monitor}"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+              <TextBlock Text="{Binding S.DesktopName}" Classes="headline"/>
+              <TextBlock Text="The name your phone and your other computers see." Classes="caption" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Grid>
+          <Border Classes="divider"/>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Monitor}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBox Grid.Column="1" Text="{Binding S.NewName}" PlaceholderText="Computer name"/>
+            <Button Grid.Column="2" Content="Rename" Margin="8,0,0,0" Command="{Binding S.RenameCommand}"/>
+          </Grid>
+          <TextBlock Classes="caption" TextWrapping="Wrap" Text="The phone remembers this computer by name. After renaming, scan the code once more (Settings › Pair a phone)."/>
+          <TextBlock Text="{Binding S.NameStatus}" IsVisible="{Binding S.NameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Classes="caption" Foreground="{StaticResource HibCyan}" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel>
+          <TextBlock Text="STARTUP" Classes="label" Margin="0,0,0,6"/>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding S.AutoStartSupported}">
+            <c:Icon Data="{x:Static vm:Icons.Power}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Start with Windows"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.StartWithWindows}"/>
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.AppWindow}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Start hidden in the tray"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.StartMinimized}"/>
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Pin}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Keep running in the tray when the window closes" TextWrapping="Wrap"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.CloseToTray}"/>
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Radar}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Let the phone find this PC"/>
+              <TextBlock Text="Needed for reconnecting by itself." Classes="faint"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.Discovery}"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Text="STORAGE" Classes="label"/>
+          <Grid ColumnDefinitions="Auto,*">
+            <c:Icon Data="{x:Static vm:Icons.Download}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Files from your devices go to"/>
+              <TextBlock Text="{Binding S.DownloadsPath}" Classes="faint" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Folder}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="H.I.B's own data"/>
+              <TextBlock Text="{Binding S.DataDir}" Classes="faint" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <Button Grid.Column="2" Content="Open" Command="{Binding S.OpenDataFolderCommand}"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" Padding="18,6">
+        <Expander HorizontalAlignment="Stretch">
+          <Expander.Header>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <c:Icon Data="{x:Static vm:Icons.Activity}" Classes="muted"/>
+              <TextBlock Text="Diagnostics log" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Expander.Header>
+          <Border Background="{StaticResource HibFieldFill}" CornerRadius="12" Padding="12" Margin="0,4,0,10">
+            <SelectableTextBlock Text="{Binding S.LogText}" Classes="mono" TextWrapping="Wrap" MaxHeight="280"/>
+          </Border>
+        </Expander>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

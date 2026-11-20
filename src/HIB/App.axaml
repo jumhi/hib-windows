@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="HIB.App"
              xmlns:local="using:HIB"
+             xmlns:c="using:HIB.Views.Controls"
              Name="H.I.B"
              RequestedThemeVariant="Dark">
 
@@ -9,51 +10,203 @@
     <local:ViewLocator />
   </Application.DataTemplates>
 
+  <!-- The Mac H.I.B look (airsync-mac/Components/Theme/HIBTheme.swift): ink/midnight/panel navy,
+       cyan accent, lime for "connected", lavender only as a faint glow. No purple anywhere. -->
   <Application.Resources>
     <ResourceDictionary>
-      <Color x:Key="HibAccent">#B79CFF</Color>
-      <Color x:Key="HibAccentDeep">#8E6CF0</Color>
-      <SolidColorBrush x:Key="HibBg" Color="#0F0D14"/>
-      <SolidColorBrush x:Key="HibSidebar" Color="#14111B"/>
-      <SolidColorBrush x:Key="HibCard" Color="#1B1724"/>
-      <SolidColorBrush x:Key="HibCardHover" Color="#231E2F"/>
-      <SolidColorBrush x:Key="HibStroke" Color="#2B2538"/>
-      <SolidColorBrush x:Key="HibText" Color="#EEEAF8"/>
-      <SolidColorBrush x:Key="HibMuted" Color="#9E97B0"/>
-      <SolidColorBrush x:Key="HibAccentBrush" Color="#B79CFF"/>
-      <SolidColorBrush x:Key="HibAccentSoft" Color="#2A2140"/>
-      <SolidColorBrush x:Key="HibOnAccent" Color="#1A1328"/>
-      <SolidColorBrush x:Key="HibGood" Color="#7EE0A8"/>
-      <SolidColorBrush x:Key="HibDanger" Color="#FF7A8A"/>
-      <LinearGradientBrush x:Key="HibHero" StartPoint="0%,0%" EndPoint="100%,100%">
-        <GradientStop Color="#2B2145" Offset="0"/>
-        <GradientStop Color="#1B1724" Offset="1"/>
+      <!-- tokens -->
+      <Color x:Key="HibInkColor">#090C21</Color>
+      <Color x:Key="HibMidnightColor">#111533</Color>
+      <Color x:Key="HibPanelColor">#131838</Color>
+      <Color x:Key="HibCyanColor">#20D9FF</Color>
+      <Color x:Key="HibLimeColor">#BAFF38</Color>
+      <Color x:Key="HibLavenderColor">#7A6BFF</Color>
+
+      <SolidColorBrush x:Key="HibInk" Color="#090C21"/>
+      <SolidColorBrush x:Key="HibMidnight" Color="#111533"/>
+      <SolidColorBrush x:Key="HibPanel" Color="#131838"/>
+      <SolidColorBrush x:Key="HibCyan" Color="#20D9FF"/>
+      <SolidColorBrush x:Key="HibCyanLabel" Color="#C720D9FF"/>
+      <SolidColorBrush x:Key="HibCyanSoft" Color="#2420D9FF"/>
+      <SolidColorBrush x:Key="HibCyanSelected" Color="#3820D9FF"/>
+      <SolidColorBrush x:Key="HibLime" Color="#BAFF38"/>
+      <SolidColorBrush x:Key="HibLimeSoft" Color="#2EBAFF38"/>
+      <SolidColorBrush x:Key="HibText" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="HibMuted" Color="#8E95B2"/>
+      <SolidColorBrush x:Key="HibFaint" Color="#5E6687"/>
+      <SolidColorBrush x:Key="HibDanger" Color="#FF5C70"/>
+      <SolidColorBrush x:Key="HibWarning" Color="#FFC14D"/>
+      <SolidColorBrush x:Key="HibOnCyan" Color="#06101F"/>
+      <SolidColorBrush x:Key="HibDivider" Color="#1AFFFFFF"/>
+      <SolidColorBrush x:Key="HibGlassFill" Color="#17FFFFFF"/>
+      <SolidColorBrush x:Key="HibGlassFillHover" Color="#26FFFFFF"/>
+      <SolidColorBrush x:Key="HibGlassFillPressed" Color="#10FFFFFF"/>
+      <SolidColorBrush x:Key="HibGlassStroke" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="HibFieldFill" Color="#59090C21"/>
+
+      <!-- hibPanel: panel 86% → midnight 62%, hairline cyan 30% → white 8% → lavender 18% -->
+      <LinearGradientBrush x:Key="HibPanelFill" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Color="#DB131838" Offset="0"/>
+        <GradientStop Color="#9E111533" Offset="1"/>
       </LinearGradientBrush>
+      <LinearGradientBrush x:Key="HibPanelStroke" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Color="#4D20D9FF" Offset="0"/>
+        <GradientStop Color="#14FFFFFF" Offset="0.5"/>
+        <GradientStop Color="#2E7A6BFF" Offset="1"/>
+      </LinearGradientBrush>
+      <!-- the phone mockup's brighter rim -->
+      <LinearGradientBrush x:Key="HibPhoneStroke" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Color="#8C20D9FF" Offset="0"/>
+        <GradientStop Color="#1AFFFFFF" Offset="0.5"/>
+        <GradientStop Color="#577A6BFF" Offset="1"/>
+      </LinearGradientBrush>
+      <!-- sidebarGradient: midnight 94% → ink 88% -->
+      <LinearGradientBrush x:Key="HibSidebarFill" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#F0111533" Offset="0"/>
+        <GradientStop Color="#E0090C21" Offset="1"/>
+      </LinearGradientBrush>
+      <!-- toasts float over any desktop, so they are more opaque -->
+      <LinearGradientBrush x:Key="HibToastFill" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Color="#F5161C40" Offset="0"/>
+        <GradientStop Color="#F00D1128" Offset="1"/>
+      </LinearGradientBrush>
+      <BoxShadows x:Key="HibPanelShadow">0 8 24 0 #38000000</BoxShadows>
+      <BoxShadows x:Key="HibGlowShadow">0 8 40 0 #1F20D9FF</BoxShadows>
+
+      <!-- Fluent control resources → navy glass + cyan (so no default control comes out purple) -->
+      <SolidColorBrush x:Key="ButtonBackground" Color="#17FFFFFF"/>
+      <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#26FFFFFF"/>
+      <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#10FFFFFF"/>
+      <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#0AFFFFFF"/>
+      <SolidColorBrush x:Key="ButtonForeground" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#C8CDE0"/>
+      <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#5E6687"/>
+      <SolidColorBrush x:Key="ButtonBorderBrush" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#12FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleButtonBackground" Color="#17FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#26FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="#3820D9FF"/>
+      <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="#FFFFFF"/>
+
+      <SolidColorBrush x:Key="TextControlBackground" Color="#59090C21"/>
+      <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#73090C21"/>
+      <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#8C090C21"/>
+      <SolidColorBrush x:Key="TextControlBorderBrush" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#20D9FF"/>
+      <SolidColorBrush x:Key="TextControlForeground" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#6F7797"/>
+      <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#7E86A6"/>
+      <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#6F7797"/>
+      <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#6620D9FF"/>
+      <SolidColorBrush x:Key="TextControlButtonForeground" Color="#8E95B2"/>
+
+      <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#1FFFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#2BFFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="#33FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="#4DFFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="#D9EEF1FA"/>
+      <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#20D9FF"/>
+      <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#4BE2FF"/>
+      <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#18B8DA"/>
+      <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#FFFFFF"/>
+
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#20D9FF"/>
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#4BE2FF"/>
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="#20D9FF"/>
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#06101F"/>
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="#06101F"/>
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUnchecked" Color="#4DFFFFFF"/>
+
+      <SolidColorBrush x:Key="ComboBoxBackground" Color="#17FFFFFF"/>
+      <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#26FFFFFF"/>
+      <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#24FFFFFF"/>
+      <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#161C40"/>
+      <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#1FFFFFFF"/>
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#3820D9FF"/>
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#4D20D9FF"/>
+
+      <SolidColorBrush x:Key="FlyoutPresenterBackground" Color="#161C40"/>
+      <SolidColorBrush x:Key="FlyoutBorderThemeBrush" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="#161C40"/>
+      <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#2620D9FF"/>
+      <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="#3820D9FF"/>
+      <SolidColorBrush x:Key="MenuFlyoutItemForeground" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#FFFFFF"/>
+
+      <SolidColorBrush x:Key="ToolTipBackground" Color="#161C40"/>
+      <SolidColorBrush x:Key="ToolTipForeground" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#4D20D9FF"/>
+
+      <SolidColorBrush x:Key="SliderTrackFill" Color="#26FFFFFF"/>
+      <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#33FFFFFF"/>
+      <SolidColorBrush x:Key="SliderTrackValueFill" Color="#20D9FF"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#4BE2FF"/>
+      <SolidColorBrush x:Key="SliderThumbBackground" Color="#EEF1FA"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#FFFFFF"/>
+
+      <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#0FFFFFFF"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderContentBackground" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="Transparent"/>
+
+      <SolidColorBrush x:Key="ListBoxItemBackgroundSelected" Color="#3820D9FF"/>
+      <SolidColorBrush x:Key="ListBoxItemBackgroundSelectedPointerOver" Color="#4D20D9FF"/>
+      <SolidColorBrush x:Key="ListBoxItemBackgroundPointerOver" Color="#1AFFFFFF"/>
     </ResourceDictionary>
   </Application.Resources>
 
   <Application.Styles>
     <FluentTheme>
       <FluentTheme.Palettes>
-        <ColorPaletteResources x:Key="Dark" Accent="#B79CFF" RegionColor="#0F0D14" AltHigh="#0F0D14"
-                               BaseHigh="#EEEAF8" ChromeMediumLow="#1B1724" ChromeLow="#14111B"/>
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#20D9FF"
+                               AltHigh="#090C21" AltLow="#090C21" AltMedium="#090C21" AltMediumHigh="#090C21" AltMediumLow="#090C21"
+                               BaseHigh="#EEF1FA" BaseLow="#2A3157" BaseMedium="#8E95B2" BaseMediumHigh="#B9BFD6" BaseMediumLow="#5E6687"
+                               ChromeAltLow="#B9BFD6" ChromeBlackHigh="#000000" ChromeBlackLow="#B9BFD6" ChromeBlackMedium="#000000" ChromeBlackMediumLow="#000000"
+                               ChromeDisabledHigh="#2A3157" ChromeDisabledLow="#5E6687" ChromeGray="#8E95B2" ChromeHigh="#3A4270"
+                               ChromeLow="#111533" ChromeMedium="#161B3D" ChromeMediumLow="#131838" ChromeWhite="#FFFFFF"
+                               ListLow="#1A2045" ListMedium="#2A3157" RegionColor="#090C21"
+                               ErrorText="#FF5C70"/>
       </FluentTheme.Palettes>
     </FluentTheme>
 
     <Style Selector="Window">
       <Setter Property="FontFamily" Value="fonts:Inter#Inter, $Default"/>
-    </Style>
-    <Style Selector="TextBlock">
+      <Setter Property="FontSize" Value="13.5"/>
       <Setter Property="Foreground" Value="{StaticResource HibText}"/>
     </Style>
+    <Style Selector="SelectableTextBlock">
+      <Setter Property="SelectionBrush" Value="#6620D9FF"/>
+    </Style>
 
-    <!-- typography -->
-    <Style Selector="TextBlock.h1">
-      <Setter Property="FontSize" Value="26"/>
+    <!-- ===== typography ===== -->
+    <!-- small caps label, e.g. "LINKED GALAXY" -->
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="LetterSpacing" Value="1.5"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyanLabel}"/>
+    </Style>
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontSize" Value="20"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
-    <Style Selector="TextBlock.h2">
-      <Setter Property="FontSize" Value="17"/>
+    <Style Selector="TextBlock.headline">
+      <Setter Property="FontSize" Value="14"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style Selector="TextBlock.muted">
@@ -63,144 +216,324 @@
       <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
       <Setter Property="FontSize" Value="12"/>
     </Style>
-    <Style Selector="TextBlock.section">
+    <Style Selector="TextBlock.faint">
+      <Setter Property="Foreground" Value="{StaticResource HibFaint}"/>
+      <Setter Property="FontSize" Value="11.5"/>
+    </Style>
+    <Style Selector="TextBlock.mono, SelectableTextBlock.mono">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, monospace"/>
+      <Setter Property="FontSize" Value="11.5"/>
       <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="LetterSpacing" Value="1"/>
-      <Setter Property="Margin" Value="0,18,0,8"/>
     </Style>
-    <Style Selector="TextBlock.toast-title">
-      <Setter Property="FontSize" Value="14.5"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
-    <Style Selector="TextBlock.toast-body">
+    <!-- Mac SettingsHeaderView: small bold secondary title next to a cyan icon -->
+    <Style Selector="TextBlock.section-title">
       <Setter Property="FontSize" Value="13"/>
-      <Setter Property="Foreground" Value="#CFC8E0"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
     </Style>
 
-    <!-- surfaces -->
-    <Style Selector="Border.card">
-      <Setter Property="Background" Value="{StaticResource HibCard}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource HibStroke}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="16"/>
-      <Setter Property="Padding" Value="18"/>
-    </Style>
-    <Style Selector="Border.hero">
-      <Setter Property="Background" Value="{StaticResource HibHero}"/>
-      <Setter Property="BorderBrush" Value="#3A2F55"/>
-      <Setter Property="BorderThickness" Value="1"/>
+    <!-- ===== surfaces ===== -->
+    <!-- hibPanel(radius: 20) -->
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="{StaticResource HibPanelFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibPanelStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
       <Setter Property="CornerRadius" Value="20"/>
-      <Setter Property="Padding" Value="22"/>
+      <Setter Property="BoxShadow" Value="{StaticResource HibPanelShadow}"/>
     </Style>
-    <Style Selector="Border.toast">
-      <Setter Property="Background" Value="#F01B1724"/>
-      <Setter Property="BorderBrush" Value="#3A3150"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="16"/>
-      <Setter Property="Padding" Value="14,12"/>
-      <Setter Property="BoxShadow" Value="0 8 24 0 #80000000"/>
+    <!-- hibPanel(glow: true) -->
+    <Style Selector="Border.panel.glow">
+      <Setter Property="BoxShadow" Value="{StaticResource HibGlowShadow}"/>
     </Style>
-    <Style Selector="Border.pill">
-      <Setter Property="Background" Value="{StaticResource HibAccentSoft}"/>
+    <!-- glassBoxIfAvailable: a lighter translucent capsule/box -->
+    <Style Selector="Border.glass">
+      <Setter Property="Background" Value="{StaticResource HibGlassFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibPanelStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="CornerRadius" Value="20"/>
+    </Style>
+    <!-- glass on top of the phone wallpaper -->
+    <Style Selector="Border.frost">
+      <Setter Property="Background" Value="#29FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#38FFFFFF"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
       <Setter Property="CornerRadius" Value="999"/>
-      <Setter Property="Padding" Value="10,3"/>
+    </Style>
+    <Style Selector="Border.chip">
+      <Setter Property="Background" Value="{StaticResource HibGlassFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibGlassStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="9,3"/>
+    </Style>
+    <Style Selector="Border.chip.cyan">
+      <Setter Property="Background" Value="{StaticResource HibCyanSoft}"/>
+      <Setter Property="BorderBrush" Value="#4D20D9FF"/>
+    </Style>
+    <Style Selector="Border.chip.lime">
+      <Setter Property="Background" Value="{StaticResource HibLimeSoft}"/>
+      <Setter Property="BorderBrush" Value="#59BAFF38"/>
+    </Style>
+    <Style Selector="Border.chip TextBlock">
+      <Setter Property="FontSize" Value="11.5"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+    </Style>
+    <!-- cyan icon tile, e.g. the Flick header tile -->
+    <Style Selector="Border.tile">
+      <Setter Property="Background" Value="{StaticResource HibCyanSoft}"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Width" Value="54"/>
+      <Setter Property="Height" Value="54"/>
+    </Style>
+    <Style Selector="Border.tile > c|Icon">
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+      <Setter Property="Size" Value="26"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.divider">
+      <Setter Property="Height" Value="1"/>
+      <Setter Property="Background" Value="{StaticResource HibDivider}"/>
+      <Setter Property="Margin" Value="0,2"/>
     </Style>
     <Style Selector="Border.badge">
-      <Setter Property="Background" Value="{StaticResource HibAccentBrush}"/>
+      <Setter Property="Background" Value="{StaticResource HibCyan}"/>
       <Setter Property="CornerRadius" Value="999"/>
-      <Setter Property="Padding" Value="6,1"/>
-      <Setter Property="MinWidth" Value="20"/>
+      <Setter Property="Padding" Value="5,0"/>
+      <Setter Property="MinWidth" Value="16"/>
+      <Setter Property="Height" Value="16"/>
+    </Style>
+    <Style Selector="Border.badge > TextBlock">
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="{StaticResource HibOnCyan}"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- buttons -->
-    <Style Selector="Button">
-      <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="Padding" Value="14,7"/>
+    <!-- section cards inside Settings pages -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{StaticResource HibPanelFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibPanelStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Padding" Value="18"/>
+      <Setter Property="BoxShadow" Value="{StaticResource HibPanelShadow}"/>
     </Style>
-    <Style Selector="Button.accent">
-      <Setter Property="Background" Value="{StaticResource HibAccentBrush}"/>
-      <Setter Property="Foreground" Value="{StaticResource HibOnAccent}"/>
+    <Style Selector="Border.hero">
+      <Setter Property="Background" Value="{StaticResource HibPanelFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibPanelStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Padding" Value="18"/>
+      <Setter Property="BoxShadow" Value="{StaticResource HibGlowShadow}"/>
+    </Style>
+    <Style Selector="Border.warn">
+      <Setter Property="BorderBrush" Value="#73FFC14D"/>
+    </Style>
+    <Style Selector="TextBlock.h2">
+      <Setter Property="FontSize" Value="15"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
-    <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="#C9B5FF"/>
-      <Setter Property="Foreground" Value="{StaticResource HibOnAccent}"/>
+    <Style Selector="Grid.row">
+      <Setter Property="Margin" Value="0,5"/>
     </Style>
-    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
-      <Setter Property="Background" Value="#A587F5"/>
+    <Style Selector="Grid.row > TextBlock, Grid.row > StackPanel">
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- ===== buttons (GlassButtonView) ===== -->
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="14,7"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <!-- prominent (primary) -->
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{StaticResource HibCyan}"/>
+      <Setter Property="Foreground" Value="{StaticResource HibOnCyan}"/>
+      <Setter Property="BorderBrush" Value="#8020D9FF"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4BE2FF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibOnCyan}"/>
+      <Setter Property="BorderBrush" Value="#8020D9FF"/>
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#18B8DA"/>
+      <Setter Property="Foreground" Value="{StaticResource HibOnCyan}"/>
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#3320D9FF"/>
+      <Setter Property="Foreground" Value="#8006101F"/>
     </Style>
     <Style Selector="Button.danger">
-      <Setter Property="Background" Value="#3A1E28"/>
-      <Setter Property="Foreground" Value="{StaticResource HibDanger}"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
-    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="#4C2533"/>
       <Setter Property="Foreground" Value="{StaticResource HibDanger}"/>
     </Style>
-    <Style Selector="Button.soft">
-      <Setter Property="Background" Value="{StaticResource HibAccentSoft}"/>
-      <Setter Property="Foreground" Value="{StaticResource HibText}"/>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#26FF5C70"/>
+      <Setter Property="Foreground" Value="{StaticResource HibDanger}"/>
+      <Setter Property="BorderBrush" Value="#59FF5C70"/>
     </Style>
-    <Style Selector="Button.soft:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="#352A52"/>
-      <Setter Property="Foreground" Value="{StaticResource HibText}"/>
-    </Style>
-    <Style Selector="Button.icon-btn">
+    <!-- a link-looking text button -->
+    <Style Selector="Button.link">
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Padding" Value="6"/>
-      <Setter Property="CornerRadius" Value="8"/>
-      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="4,2"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
     </Style>
-    <Style Selector="Button.round">
-      <Setter Property="Width" Value="44"/>
-      <Setter Property="Height" Value="44"/>
-      <Setter Property="CornerRadius" Value="22"/>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1420D9FF"/>
+      <Setter Property="Foreground" Value="#7FE9FF"/>
+    </Style>
+    <!-- round icon-only glass button -->
+    <Style Selector="Button.icon">
       <Setter Property="Padding" Value="0"/>
+      <Setter Property="Width" Value="32"/>
+      <Setter Property="Height" Value="32"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
-    <Style Selector="Button.round.big">
-      <Setter Property="Width" Value="56"/>
-      <Setter Property="Height" Value="56"/>
-      <Setter Property="CornerRadius" Value="28"/>
+    <Style Selector="Button.icon.small">
+      <Setter Property="Width" Value="26"/>
+      <Setter Property="Height" Value="26"/>
+    </Style>
+    <Style Selector="Button.icon.big">
+      <Setter Property="Width" Value="40"/>
+      <Setter Property="Height" Value="40"/>
+    </Style>
+    <!-- bare: no fill until hovered -->
+    <Style Selector="Button.bare">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <!-- glass buttons on the phone wallpaper -->
+    <Style Selector="Button.frost">
+      <Setter Property="Background" Value="#29FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#38FFFFFF"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Button.frost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#40FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#59FFFFFF"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Button.frost:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1FFFFFFF"/>
+    </Style>
+    <Style Selector="Button.frost.on">
+      <Setter Property="Background" Value="#6620D9FF"/>
+      <Setter Property="BorderBrush" Value="#9920D9FF"/>
     </Style>
 
-    <!-- sidebar -->
-    <Style Selector="Button.nav">
+    <!-- floating tab pill buttons -->
+    <Style Selector="Button.tab">
       <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="13"/>
+      <Setter Property="Width" Value="46"/>
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Foreground" Value="#B9BFD6"/>
+    </Style>
+    <Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#14FFFFFF"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Button.tab.selected">
+      <Setter Property="Background" Value="#24FFFFFF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <Style Selector="Button.tab.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2BFFFFFF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+
+    <!-- settings section rows (SettingsSidebarView) -->
+    <Style Selector="Button.section">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="10,7"/>
       <Setter Property="HorizontalAlignment" Value="Stretch"/>
       <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Padding" Value="12,9"/>
-      <Setter Property="Margin" Value="0,1"/>
-      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+      <Setter Property="Margin" Value="0,0,0,3"/>
     </Style>
-    <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="#1E1A29"/>
+    <Style Selector="Button.section:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#14FFFFFF"/>
     </Style>
-    <Style Selector="Button.nav.selected">
-      <Setter Property="Background" Value="{StaticResource HibAccentSoft}"/>
-      <Setter Property="Foreground" Value="{StaticResource HibAccentBrush}"/>
+    <Style Selector="Button.section.selected">
+      <Setter Property="Background" Value="{StaticResource HibCyanSelected}"/>
     </Style>
-    <Style Selector="Button.nav.selected:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="#30264A"/>
-    </Style>
-    <Style Selector="Button.nav TextBlock">
-      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}"/>
+    <Style Selector="Button.section.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4220D9FF"/>
     </Style>
 
-    <Style Selector="ProgressBar">
-      <Setter Property="Foreground" Value="{StaticResource HibAccentBrush}"/>
-      <Setter Property="Background" Value="#2E2840"/>
-    </Style>
+    <!-- ===== inputs ===== -->
     <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="SelectionBrush" Value="#6620D9FF"/>
+      <Setter Property="CaretBrush" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+    </Style>
+    <Style Selector="NumericUpDown">
       <Setter Property="CornerRadius" Value="10"/>
     </Style>
     <Style Selector="ToggleSwitch">
       <Setter Property="OnContent" Value=""/>
       <Setter Property="OffContent" Value=""/>
+      <Setter Property="MinWidth" Value="0"/>
+    </Style>
+    <Style Selector="ProgressBar">
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+      <Setter Property="Background" Value="#1FFFFFFF"/>
+      <Setter Property="CornerRadius" Value="3"/>
+      <Setter Property="MinHeight" Value="4"/>
+    </Style>
+    <Style Selector="FlyoutPresenter">
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="Padding" Value="14"/>
+    </Style>
+    <Style Selector="MenuFlyoutPresenter">
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+    </Style>
+    <Style Selector="ToolTip">
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+    </Style>
+
+    <!-- ===== icons ===== -->
+    <Style Selector="c|Icon.muted">
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+    </Style>
+    <Style Selector="c|Icon.cyan">
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <!-- a spinner: <c:Icon Classes="spin" Data="{x:Static vm:Icons.LoaderCircle}"/> -->
+    <Style Selector="c|Icon.spin">
+      <Setter Property="RenderTransform">
+        <RotateTransform/>
+      </Setter>
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0"/></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360"/></KeyFrame>
+        </Animation>
+      </Style.Animations>
     </Style>
   </Application.Styles>
 </Application>

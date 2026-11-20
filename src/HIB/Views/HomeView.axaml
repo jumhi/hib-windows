@@ -1,111 +1,333 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
              x:Class="HIB.Views.HomeView"
              x:DataType="vm:HomeViewModel">
-  <ScrollViewer>
-    <StackPanel Margin="32,28" Spacing="16" MaxWidth="900">
-      <TextBlock Text="Home" Classes="h1"/>
+  <!-- The Mac's SidebarView: linked phone card, phone mockup (PhoneView/ScreenView), Mirror ▾ / Desktop ▾ -->
+  <UserControl.Resources>
+    <LinearGradientBrush x:Key="PhoneFallback" StartPoint="0%,0%" EndPoint="100%,100%">
+      <GradientStop Color="#22346B" Offset="0"/>
+      <GradientStop Color="#152052" Offset="0.55"/>
+      <GradientStop Color="#0C1433" Offset="1"/>
+    </LinearGradientBrush>
+    <RadialGradientBrush x:Key="PhoneGlowCyan" Center="85%,12%" GradientOrigin="85%,12%" RadiusX="70%" RadiusY="45%">
+      <GradientStop Color="#5520D9FF" Offset="0"/>
+      <GradientStop Color="#0020D9FF" Offset="1"/>
+    </RadialGradientBrush>
+    <RadialGradientBrush x:Key="PhoneGlowLavender" Center="10%,90%" GradientOrigin="10%,90%" RadiusX="75%" RadiusY="40%">
+      <GradientStop Color="#307A6BFF" Offset="0"/>
+      <GradientStop Color="#007A6BFF" Offset="1"/>
+    </RadialGradientBrush>
+    <LinearGradientBrush x:Key="ScreenShade" StartPoint="0%,0%" EndPoint="0%,100%">
+      <GradientStop Color="#59000000" Offset="0"/>
+      <GradientStop Color="#0D000000" Offset="1"/>
+    </LinearGradientBrush>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button.frost.quick">
+      <Setter Property="Width" Value="44"/>
+      <Setter Property="Height" Value="30"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.frost.round">
+      <Setter Property="Width" Value="34"/>
+      <Setter Property="Height" Value="30"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.split">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Height" Value="38"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.split:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1AFFFFFF"/>
+    </Style>
+    <Style Selector="c|Icon.white">
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+  </UserControl.Styles>
 
-      <!-- Device card -->
-      <Border Classes="hero">
-        <Grid ColumnDefinitions="Auto,*">
-          <Border Width="96" Height="170" CornerRadius="16" ClipToBounds="True" Background="#120F19"
-                  BorderBrush="#3A2F55" BorderThickness="1" Margin="0,0,22,0">
-            <Panel>
-              <Image Source="{Binding Wallpaper}" Stretch="UniformToFill" IsVisible="{Binding HasWallpaper}"/>
-              <PathIcon Data="M17,19H7V5H17M17,1H7C5.89,1 5,1.89 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3C19,1.89 18.1,1 17,1Z"
-                        Width="34" Height="34" Foreground="{StaticResource HibMuted}" IsVisible="{Binding !HasWallpaper}"/>
-            </Panel>
+  <Grid RowDefinitions="Auto,*,Auto" Margin="0,40,0,0">
+    <!-- ===== LINKED GALAXY ===== -->
+    <Border Classes="panel glow" CornerRadius="18" Padding="10" Margin="14,4,14,0">
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <Border Width="38" Height="38" CornerRadius="11" Background="{StaticResource HibCyanSoft}">
+            <TextBlock Text="H" FontSize="19" FontWeight="Bold" Foreground="{StaticResource HibCyan}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <Border Classes="pill" IsVisible="{Binding IsConnected}">
-                <TextBlock Text="Connected" FontSize="12" Foreground="{StaticResource HibGood}"/>
-              </Border>
-              <Border Classes="pill" IsVisible="{Binding !IsConnected}">
-                <TextBlock Text="Not connected" FontSize="12" Foreground="{StaticResource HibMuted}"/>
-              </Border>
-              <Border Classes="pill">
-                <TextBlock Text="PLUS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource HibAccentBrush}"/>
-              </Border>
-            </StackPanel>
-            <TextBlock Text="{Binding DeviceName}" FontSize="28" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Text="{Binding DeviceDetail}" Classes="muted"/>
-            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0" IsVisible="{Binding HasBattery}">
-              <ProgressBar Value="{Binding Battery}" Maximum="100" Width="160" Height="8" CornerRadius="4" VerticalAlignment="Center"/>
-              <TextBlock Text="{Binding BatteryText}" VerticalAlignment="Center"/>
-            </StackPanel>
-            <TextBlock Text="{Binding HintText}" Classes="muted" TextWrapping="Wrap" Margin="0,4,0,0"/>
+          <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center" Spacing="1">
+            <TextBlock Text="LINKED GALAXY" Classes="label" FontSize="9"/>
+            <TextBlock Text="{Binding ShortName}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding DeviceName}"/>
           </StackPanel>
+          <!-- HIBStatusMark -->
+          <Panel Grid.Column="2" Width="28" Height="28" ToolTip.Tip="{Binding ConnectionText}">
+            <Ellipse Fill="#2EBAFF38" IsVisible="{Binding IsConnected}"/>
+            <Ellipse Fill="#14FFFFFF" IsVisible="{Binding !IsConnected}"/>
+            <Border Width="8" Height="8" CornerRadius="4" Background="{StaticResource HibLime}"
+                    BoxShadow="0 0 10 1 #CCBAFF38" IsVisible="{Binding IsConnected}"/>
+            <Border Width="8" Height="8" CornerRadius="4" Background="{StaticResource HibMuted}" IsVisible="{Binding !IsConnected}"/>
+          </Panel>
         </Grid>
-      </Border>
-
-      <!-- Quick actions -->
-      <TextBlock Text="QUICK ACTIONS" Classes="section"/>
-      <WrapPanel>
-        <Button Classes="accent" Margin="0,0,10,10" Command="{Binding RingCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Width="15" Height="15" Data="M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M14,21A2,2 0 0,1 12,23A2,2 0 0,1 10,21" Foreground="{StaticResource HibOnAccent}"/>
-            <TextBlock Text="{Binding RingLabel}" Foreground="{StaticResource HibOnAccent}"/>
-          </StackPanel>
-        </Button>
-        <Button Classes="soft" Margin="0,0,10,10" Content="Reconnect" Command="{Binding ReconnectCommand}" IsVisible="{Binding !IsConnected}"/>
-        <Button Classes="soft" Margin="0,0,10,10" Content="Pair a phone" Command="{Binding OpenPairCommand}"/>
-        <Button Classes="soft" Margin="0,0,10,10" Content="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding IsConnected}"/>
-      </WrapPanel>
-
-      <!-- Now playing -->
-      <TextBlock Text="NOW PLAYING ON PHONE" Classes="section"/>
-      <Border Classes="card">
-        <Panel>
-          <TextBlock Text="Nothing playing" Classes="muted" IsVisible="{Binding !HasMedia}"/>
-          <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasMedia}">
-            <Border Width="112" Height="112" CornerRadius="14" ClipToBounds="True" Background="#2A2140" Margin="0,0,20,0">
-              <Panel>
-                <Image Source="{Binding AlbumArt}" Stretch="UniformToFill" IsVisible="{Binding HasAlbumArt}"/>
-                <PathIcon Width="36" Height="36" Foreground="{StaticResource HibAccentBrush}" IsVisible="{Binding !HasAlbumArt}"
-                          Data="M12,3V12.26C11.5,12.09 11,12 10.5,12C8,12 6,14 6,16.5C6,19 8,21 10.5,21C13,21 15,19 15,16.5V6H19V3H12Z"/>
-              </Panel>
-            </Border>
-            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-              <TextBlock Text="{Binding MediaTitle}" Classes="h2" TextTrimming="CharacterEllipsis"/>
-              <TextBlock Text="{Binding MediaArtist}" Classes="muted" TextTrimming="CharacterEllipsis"/>
-              <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,8,0,0">
-                <TextBlock Text="{Binding Elapsed}" Classes="caption" VerticalAlignment="Center"/>
-                <ProgressBar Grid.Column="1" Value="{Binding Progress}" Maximum="100" Height="4" Margin="10,0" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="{Binding Duration}" Classes="caption" VerticalAlignment="Center"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                  <Button Classes="round soft" Command="{Binding PreviousCommand}" ToolTip.Tip="Previous">
-                    <PathIcon Width="16" Height="16" Data="M6,18V6H8V18H6M9.5,12L18,6V18L9.5,12Z"/>
-                  </Button>
-                  <Button Classes="round big accent" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause">
-                    <PathIcon Width="20" Height="20" Data="{Binding PlayPauseIcon}" Foreground="{StaticResource HibOnAccent}"/>
-                  </Button>
-                  <Button Classes="round soft" Command="{Binding NextCommand}" ToolTip.Tip="Next">
-                    <PathIcon Width="16" Height="16" Data="M16,18H18V6H16M6,18L14.5,12L6,6V18Z"/>
-                  </Button>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                  <Button Classes="round soft" Command="{Binding VolumeDownCommand}" ToolTip.Tip="Phone volume down">
-                    <TextBlock Text="−" FontSize="18" HorizontalAlignment="Center"/>
-                  </Button>
-                  <StackPanel VerticalAlignment="Center" MinWidth="54">
-                    <TextBlock Text="{Binding Volume, StringFormat='{}{0}%'}" HorizontalAlignment="Center" FontWeight="SemiBold"/>
-                    <TextBlock Text="volume" Classes="caption" HorizontalAlignment="Center"/>
+        <!-- other computers online right now -->
+        <ItemsControl ItemsSource="{Binding OtherDevices}" IsVisible="{Binding HasOtherDevices}" Margin="2,0,0,0">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:DeviceChip">
+              <Button Classes="bare" Padding="0" Margin="0,0,6,4" ToolTip.Tip="{Binding Tip}"
+                      Command="{Binding $parent[ItemsControl].((vm:HomeViewModel)DataContext).OpenDevicesCommand}">
+                <Border Classes="chip" Padding="7,3">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <c:Icon Data="{Binding IconPath}" Size="12" Classes="cyan" StrokeThickness="2.2"/>
+                    <TextBlock Text="{Binding Name}" FontSize="11" MaxWidth="120" TextTrimming="CharacterEllipsis"/>
+                    <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource HibLime}"
+                            VerticalAlignment="Center" IsVisible="{Binding InUse}"/>
                   </StackPanel>
-                  <Button Classes="round soft" Command="{Binding VolumeUpCommand}" ToolTip.Tip="Phone volume up">
-                    <TextBlock Text="+" FontSize="18" HorizontalAlignment="Center"/>
-                  </Button>
-                  <Button Classes="soft" Command="{Binding ToggleMuteCommand}" Content="Mute"/>
+                </Border>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+    <!-- ===== phone mockup ===== -->
+    <Panel Grid.Row="1" Width="226" MaxHeight="476" Margin="0,14,0,8" HorizontalAlignment="Center">
+      <Border CornerRadius="26" Background="#111533" BoxShadow="0 9 48 0 #2620D9FF"/>
+      <Border CornerRadius="26" ClipToBounds="True">
+        <Panel>
+          <!-- wallpaper (album art while music plays) -->
+          <Border Background="{StaticResource PhoneFallback}"/>
+          <Border Background="{StaticResource PhoneGlowCyan}"/>
+          <Border Background="{StaticResource PhoneGlowLavender}"/>
+          <Image Source="{Binding ScreenImage}" Stretch="UniformToFill" IsVisible="{Binding HasScreenImage}"/>
+          <Border Background="{StaticResource ScreenShade}"/>
+
+          <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="8,10,8,8">
+            <!-- ConnectionStatusPill -->
+            <Button Classes="bare" Padding="0" HorizontalAlignment="Center" ToolTip.Tip="Connection">
+              <Border Classes="frost" Padding="11,6">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                  <c:Icon Data="{x:Static vm:Icons.Wifi}" Size="15" Classes="white" StrokeThickness="2.2" IsVisible="{Binding IsConnected}"/>
+                  <c:Icon Data="{x:Static vm:Icons.Globe}" Size="15" Classes="white" StrokeThickness="2.2" Opacity="0.55" IsVisible="{Binding !IsConnected}"/>
+                  <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="15" Classes="white" StrokeThickness="2.2" IsVisible="{Binding IsAdbConnected}"/>
+                  <c:Icon Data="{Binding AdbModeIcon}" Size="15" Classes="white" StrokeThickness="2.2" IsVisible="{Binding IsAdbConnected}"/>
+                  <c:Icon Data="{x:Static vm:Icons.Speaker}" Size="15" Classes="white" StrokeThickness="2.2" IsVisible="{Binding IsAudioHere}"/>
+                  <c:Icon Data="{x:Static vm:Icons.MonitorDown}" Size="15" Classes="white" StrokeThickness="2.2"/>
                 </StackPanel>
-              </Grid>
+              </Border>
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <StackPanel Spacing="10" Width="290">
+                    <Grid ColumnDefinitions="Auto,*">
+                      <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="16" Classes="cyan" Margin="0,0,10,0"/>
+                      <StackPanel Grid.Column="1">
+                        <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding LinkText}" Classes="caption" TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasFeatures}">
+                      <c:Icon Data="{Binding AdbModeIcon}" Size="16" Classes="cyan" Margin="0,0,10,0"/>
+                      <TextBlock Grid.Column="1" Text="{Binding AdbText}" Classes="caption" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*">
+                      <c:Icon Data="{x:Static vm:Icons.MonitorDown}" Size="16" Classes="cyan" Margin="0,0,10,0"/>
+                      <TextBlock Grid.Column="1" Text="Ready to receive files and Flicks" Classes="caption" VerticalAlignment="Center"/>
+                    </Grid>
+                    <WrapPanel HorizontalAlignment="Center" Margin="0,4,0,0">
+                      <Button Content="ADB" Margin="0,0,8,0" Command="{Binding ToggleAdbCommand}" IsVisible="{Binding HasFeatures}" ToolTip.Tip="Connect or disconnect ADB"/>
+                      <Button Content="Reconnect" Margin="0,0,8,0" Command="{Binding ReconnectCommand}" IsVisible="{Binding !IsConnected}"/>
+                      <Button Classes="primary" Content="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding IsConnected}"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <!-- not connected: like ConnectionStateView -->
+            <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,10,0,0" Spacing="6"
+                        IsVisible="{Binding !IsConnected}">
+              <Border Classes="frost" Padding="10,5" HorizontalAlignment="Center">
+                <TextBlock Text="{Binding ConnectionText}" FontSize="11.5" Foreground="White" TextTrimming="CharacterEllipsis" MaxWidth="180"/>
+              </Border>
+              <Button Classes="frost" Content="Reconnect" HorizontalAlignment="Center" Padding="12,4" FontSize="12"
+                      Command="{Binding ReconnectCommand}"/>
             </StackPanel>
+
+            <!-- TimeView: stacked when the music card is hidden -->
+            <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="2" IsVisible="{Binding ClockStacked}">
+              <c:GlassText Text="{Binding Hour}" FontSize="96" Spacing="-5" HorizontalAlignment="Center"/>
+              <c:GlassText Text="{Binding Minute}" FontSize="96" Spacing="-5" HorizontalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8"
+                        IsVisible="{Binding !ClockStacked}">
+              <c:GlassText Text="{Binding Hour}" FontSize="58" Spacing="-3"/>
+              <c:GlassText Text="{Binding Minute}" FontSize="58" Spacing="-3"/>
+            </StackPanel>
+
+            <!-- RecentAppsGridView -->
+            <ItemsControl Grid.Row="3" ItemsSource="{Binding RecentApps}" Opacity="{Binding ScreenOpacity}" HorizontalAlignment="Center" Margin="0,6,0,8">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4"/></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PhoneAppItem">
+                  <Button Classes="bare" Padding="0" Width="38" Height="38" CornerRadius="11" ToolTip.Tip="{Binding Name}"
+                          Command="{Binding $parent[ItemsControl].((vm:HomeViewModel)DataContext).OpenAppCommand}" CommandParameter="{Binding}">
+                    <Border Width="36" Height="36" CornerRadius="10" ClipToBounds="True" Background="#33FFFFFF">
+                      <Panel>
+                        <Image Source="{Binding Icon}" IsVisible="{Binding HasIcon}"/>
+                        <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasIcon}" FontWeight="Bold" Foreground="White"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Panel>
+                    </Border>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- quick actions: send, files, mute, clipboard -->
+            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,0,0,8" Opacity="{Binding ScreenOpacity}">
+              <Button Classes="frost quick" ToolTip.Tip="Send files to the phone" Command="{Binding SendFilesCommand}">
+                <c:Icon Data="{x:Static vm:Icons.Share}" Size="16"/>
+              </Button>
+              <Button Classes="frost quick" ToolTip.Tip="Files" Command="{Binding OpenFilesCommand}">
+                <c:Icon Data="{x:Static vm:Icons.Folder}" Size="16"/>
+              </Button>
+              <Button Classes="frost quick" Classes.on="{Binding IsSilenced}" ToolTip.Tip="{Binding SilenceTip}" Command="{Binding ToggleSilenceCommand}">
+                <c:Icon Data="{Binding SilenceIcon}" Size="16"/>
+              </Button>
+              <Button Classes="frost quick" ToolTip.Tip="Send this PC's clipboard to the phone" Command="{Binding SendClipboardCommand}">
+                <c:Icon Data="{x:Static vm:Icons.Clipboard}" Size="16"/>
+              </Button>
+            </StackPanel>
+
+            <!-- DeviceStatusView: music card + battery / volume / music -->
+            <Border Grid.Row="5" Classes="frost" CornerRadius="20" Padding="4" HorizontalAlignment="Center" Opacity="{Binding ScreenOpacity}">
+              <StackPanel Spacing="4">
+                <!-- MediaPlayerView -->
+                <StackPanel Spacing="5" Margin="8,8,8,4" Width="176" IsVisible="{Binding MusicCardVisible}">
+                  <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                    <c:Icon Data="{x:Static vm:Icons.ListMusic}" Size="12" Classes="white"/>
+                    <TextBlock Text="{Binding MediaTitle}" FontSize="12" FontWeight="SemiBold" Foreground="White"
+                               TextTrimming="CharacterEllipsis" MaxWidth="150"/>
+                  </StackPanel>
+                  <TextBlock Text="{Binding MediaArtist}" FontSize="11" Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" MaxWidth="170"/>
+                  <StackPanel Spacing="1" IsVisible="{Binding HasDuration}">
+                    <ProgressBar Value="{Binding Progress}" Maximum="100" Height="4" MinHeight="4" MinWidth="0" Margin="2,0" Foreground="White" Background="#33FFFFFF"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Elapsed}" FontSize="9.5" Foreground="#B3FFFFFF" FontFamily="Cascadia Mono, Consolas, Menlo, monospace"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Duration}" FontSize="9.5" Foreground="#B3FFFFFF" FontFamily="Cascadia Mono, Consolas, Menlo, monospace"/>
+                    </Grid>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                    <Button Classes="frost round" ToolTip.Tip="Previous" Command="{Binding PreviousCommand}">
+                      <c:Icon Data="{x:Static vm:Icons.SkipBack}" Size="14"/>
+                    </Button>
+                    <Button Classes="primary" Width="40" Height="30" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                            ToolTip.Tip="Play / pause" Command="{Binding PlayPauseCommand}">
+                      <c:Icon Data="{Binding PlayPauseIcon}" Size="15" StrokeThickness="2.4"/>
+                    </Button>
+                    <Button Classes="frost round" ToolTip.Tip="Next" Command="{Binding NextCommand}">
+                      <c:Icon Data="{x:Static vm:Icons.SkipForward}" Size="14"/>
+                    </Button>
+                  </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="5" Margin="8,0,2,0" VerticalAlignment="Center" ToolTip.Tip="{Binding BatteryText}">
+                    <c:Icon Data="{Binding BatteryIcon}" Size="17" Classes="white"/>
+                    <TextBlock Text="{Binding BatteryPercent}" FontSize="11.5" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <Button Classes="frost round" Width="46" ToolTip.Tip="{Binding VolumeText}">
+                    <c:Icon Data="{Binding VolumeIcon}" Size="15"/>
+                    <Button.Flyout>
+                      <Flyout Placement="Top">
+                        <StackPanel Width="220" Spacing="8">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Data="{x:Static vm:Icons.Volume}" Size="15" Classes="muted"/>
+                            <Slider Grid.Column="1" Minimum="0" Maximum="100" Margin="8,0"
+                                    Value="{Binding VolumeValue}"/>
+                            <c:Icon Grid.Column="2" Data="{x:Static vm:Icons.Volume2}" Size="15" Classes="muted"/>
+                          </Grid>
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding VolumeText, StringFormat='Phone volume · {0}'}" Classes="caption" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="Mute" Padding="10,4" FontSize="12" Command="{Binding ToggleMuteCommand}"/>
+                          </Grid>
+                        </StackPanel>
+                      </Flyout>
+                    </Button.Flyout>
+                  </Button>
+                  <Button Classes="frost round" Width="46" Classes.on="{Binding MusicCardVisible}" ToolTip.Tip="Show or hide the player"
+                          Command="{Binding ToggleMusicCardCommand}" IsVisible="{Binding HasMedia}">
+                    <c:Icon Data="{Binding MusicToggleIcon}" Size="15"/>
+                  </Button>
+                </StackPanel>
+              </StackPanel>
+            </Border>
           </Grid>
         </Panel>
       </Border>
+      <Border CornerRadius="26" BorderBrush="{StaticResource HibPhoneStroke}" BorderThickness="1" IsHitTestVisible="False"/>
+    </Panel>
+
+    <!-- ===== Mirror ▾ / Desktop ▾ ===== -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,4,0,14"
+                IsVisible="{Binding HasFeatures}">
+      <Border Classes="glass" CornerRadius="19" Background="#1CFFFFFF">
+        <StackPanel Orientation="Horizontal">
+          <Button Classes="split" Padding="14,0,10,0" CornerRadius="19,0,0,19" Command="{Binding MirrorCommand}" ToolTip.Tip="Show the phone screen in a window">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="16"/>
+              <TextBlock Text="Mirror" FontSize="13.5" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Border Width="1" Background="#26FFFFFF" Margin="0,10"/>
+          <Button Classes="split" Padding="8,0,11,0" CornerRadius="0,19,19,0" ToolTip.Tip="More">
+            <c:Icon Data="{x:Static vm:Icons.ChevronDown}" Size="14"/>
+            <Button.Flyout>
+              <MenuFlyout Placement="TopEdgeAlignedLeft">
+                <MenuItem Header="Mirror screen" Command="{Binding MirrorCommand}"/>
+                <MenuItem Header="Open an app…" Command="{Binding OpenAppsCommand}"/>
+                <MenuItem Header="Play phone audio here" Command="{Binding ToggleAudioHereCommand}"/>
+                <MenuItem Header="Close mirror windows" Command="{Binding StopMirroringCommand}"/>
+                <MenuItem Header="Mirroring settings…" Command="{Binding OpenMirrorSettingsCommand}"/>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+      </Border>
+      <Border Classes="glass" CornerRadius="19" Background="#1CFFFFFF">
+        <StackPanel Orientation="Horizontal">
+          <Button Classes="split" Padding="14,0,10,0" CornerRadius="19,0,0,19" Command="{Binding DesktopCommand}" ToolTip.Tip="Phone desktop mode in a window">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <c:Icon Data="{x:Static vm:Icons.Monitor}" Size="16"/>
+              <TextBlock Text="Desktop" FontSize="13.5" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Border Width="1" Background="#26FFFFFF" Margin="0,10"/>
+          <Button Classes="split" Padding="8,0,11,0" CornerRadius="0,19,19,0" ToolTip.Tip="More">
+            <c:Icon Data="{x:Static vm:Icons.ChevronDown}" Size="14"/>
+            <Button.Flyout>
+              <MenuFlyout Placement="TopEdgeAlignedRight">
+                <MenuItem Header="Desktop mode" Command="{Binding DesktopCommand}"/>
+                <MenuItem Header="Close desktop windows" Command="{Binding StopMirroringCommand}"/>
+                <MenuItem Header="Mirroring settings…" Command="{Binding OpenMirrorSettingsCommand}"/>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+      </Border>
     </StackPanel>
-  </ScrollViewer>
+  </Grid>
 </UserControl>

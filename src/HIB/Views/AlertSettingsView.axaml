@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
+             x:Class="HIB.Views.AlertSettingsView"
+             x:DataType="vm:AlertSettingsViewModel">
+  <!-- Settings › Notifications -->
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="Notifications" IconData="{x:Static vm:Icons.Bell}"/>
+
+      <Border Classes="card">
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,10">
+            <Border Classes="tile" Margin="0,0,14,0">
+              <c:Icon Data="{x:Static vm:Icons.BellRing}"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+              <TextBlock Text="Phone notifications on this PC" Classes="headline"/>
+              <TextBlock Text="They pop up in the corner of the screen and stay in the Notifications tab. Reply, open or dismiss them from here." Classes="caption" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Grid>
+          <Border Classes="divider"/>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Bell}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Show notifications as pop-ups"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.NotificationToasts}"/>
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.BellOff}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Also pop up silent notifications"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.SilentToasts}"/>
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Activity}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Pop-ups stay for (seconds)"/>
+            <NumericUpDown Grid.Column="2" Value="{Binding S.ToastSeconds}" Minimum="2" Maximum="60" Increment="1" FormatString="0" Width="120"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="4">
+          <TextBlock Text="CALLS" Classes="label" Margin="0,0,0,6"/>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.PhoneCall}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Incoming call pop-up"/>
+              <TextBlock Text="Answer or decline from this PC." Classes="faint"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.CallPopups}"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

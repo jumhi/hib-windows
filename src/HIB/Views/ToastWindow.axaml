@@ -1,9 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:s="using:HIB.Services"
+        xmlns:vm="using:HIB.ViewModels"
+        xmlns:c="using:HIB.Views.Controls"
         x:Class="HIB.Views.ToastWindow"
         x:DataType="s:ToastViewModel"
-        Width="372"
+        Width="384"
         SizeToContent="Height"
         WindowDecorations="None"
         CanResize="False"
@@ -13,40 +15,46 @@
         Background="Transparent"
         TransparencyLevelHint="Transparent"
         Title="H.I.B">
-  <Border Classes="toast" Margin="2">
+  <!-- Pop-ups look like the Mac's notification cards: navy glass, gradient hairline, soft shadow -->
+  <Border Margin="10,8,10,12" CornerRadius="20" Padding="14,12"
+          Background="{StaticResource HibToastFill}" BorderBrush="{StaticResource HibPanelStroke}" BorderThickness="0.8"
+          BoxShadow="0 8 22 0 #66000000">
     <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
-      <!-- header: icon, caption, close -->
-      <Border Grid.Row="0" Grid.Column="0" Width="22" Height="22" CornerRadius="6" ClipToBounds="True"
+      <!-- header: app icon, caption, close -->
+      <Border Grid.Row="0" Grid.Column="0" Width="20" Height="20" CornerRadius="6" ClipToBounds="True"
               Margin="0,0,8,0" IsVisible="{Binding HasIcon}">
         <Image Source="{Binding Icon}" Stretch="UniformToFill"/>
       </Border>
-      <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Caption}" Classes="caption" VerticalAlignment="Center"/>
-      <Button Grid.Row="0" Grid.Column="2" Classes="icon-btn" Command="{Binding DismissCommand}" ToolTip.Tip="Dismiss">
-        <PathIcon Width="10" Height="10" Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+      <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Caption}" FontSize="12" FontWeight="SemiBold"
+                 Foreground="{StaticResource HibMuted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+      <Button Grid.Row="0" Grid.Column="2" Classes="icon small bare" Width="24" Height="24" Command="{Binding DismissCommand}" ToolTip.Tip="Dismiss">
+        <c:Icon Data="{x:Static vm:Icons.X}" Size="12" StrokeThickness="2.4"/>
       </Button>
 
-      <!-- content -->
+      <!-- content (click to open, drag a received file out) -->
       <Grid Grid.Row="1" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,8,0,0" Background="Transparent"
             Cursor="Hand" PointerPressed="OnContentPressed" PointerMoved="OnContentMoved" PointerReleased="OnContentClicked">
-        <StackPanel Spacing="2">
-          <TextBlock Text="{Binding Title}" Classes="toast-title" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap"/>
-          <TextBlock Text="{Binding Body}" Classes="toast-body" TextWrapping="Wrap" MaxLines="4"
+        <StackPanel Spacing="3" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding Body}" FontSize="13" Foreground="#D6DAEA" TextWrapping="Wrap" MaxLines="4"
                      TextTrimming="CharacterEllipsis" IsVisible="{Binding HasBody}"/>
         </StackPanel>
-        <Border Grid.Column="1" Width="64" Height="64" CornerRadius="10" ClipToBounds="True" Margin="10,0,0,0"
-                IsVisible="{Binding HasImage}">
+        <Border Grid.Column="1" Width="64" Height="64" CornerRadius="12" ClipToBounds="True" Margin="12,0,0,0"
+                BorderBrush="#26FFFFFF" BorderThickness="0.8" IsVisible="{Binding HasImage}">
           <Image Source="{Binding Image}" Stretch="UniformToFill"/>
         </Border>
       </Grid>
 
       <!-- inline reply -->
       <Grid Grid.Row="2" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,10,0,0" IsVisible="{Binding HasReply}">
-        <TextBox Text="{Binding ReplyText}" PlaceholderText="{Binding ReplyPlaceholder}" Classes="reply">
+        <TextBox Text="{Binding ReplyText}" PlaceholderText="{Binding ReplyPlaceholder}">
           <TextBox.KeyBindings>
             <KeyBinding Gesture="Enter" Command="{Binding SendReplyCommand}"/>
           </TextBox.KeyBindings>
         </TextBox>
-        <Button Grid.Column="1" Classes="accent" Margin="6,0,0,0" Command="{Binding SendReplyCommand}">Send</Button>
+        <Button Grid.Column="1" Classes="primary icon" Width="36" Height="32" Margin="8,0,0,0" ToolTip.Tip="Send" Command="{Binding SendReplyCommand}">
+          <c:Icon Data="{x:Static vm:Icons.Send}" Size="15" StrokeThickness="2.2"/>
+        </Button>
       </Grid>
 
       <!-- action buttons -->
@@ -59,8 +67,8 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="s:ToastButton">
-            <Button Content="{Binding Label}" Command="{Binding Command}" Margin="0,0,6,4"
-                    Classes.accent="{Binding IsPrimary}" Classes.danger="{Binding IsDanger}" Classes.soft="{Binding IsNeutral}"/>
+            <Button Content="{Binding Label}" Command="{Binding Command}" Margin="0,0,6,4" Padding="13,6" FontSize="12.5"
+                    Classes.primary="{Binding IsPrimary}" Classes.danger="{Binding IsDanger}"/>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
