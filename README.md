@@ -1,6 +1,55 @@
-# H.I.B for Windows
+# H.I.B
 
-Desktop companion for the H.I.B Android app (private AirSync fork). The phone connects to it exactly as it connects to the Mac app. Made by Haitham Hamid.
+**Your Android phone and your computer, working as one.** Notifications, calls, clipboard, files,
+music, phone mirroring and **Flick** — point your phone at a screen and throw a photo, file or link
+onto it. Made by Haitham Hamid.
+
+This repository is the **Windows app**. The phone app lives at
+[jumhi/hib-android](https://github.com/jumhi/hib-android).
+
+## Get started (5 minutes)
+
+You need: a Windows 10/11 PC and an Android phone (Android 11+), on the same Wi-Fi.
+
+1. **On the phone:** download the latest `H.I.B.apk` from
+   [hib-android releases](https://github.com/jumhi/hib-android/releases/latest) and open it.
+   - Allow your browser to install apps when Android asks.
+   - Samsung: if it says the app is blocked, turn off **Settings › Security and privacy › Auto Blocker**
+     for a moment, install, then turn it back on.
+2. **On the PC:** download `H.I.B-Setup.exe` from
+   [the latest release](https://github.com/jumhi/hib-windows/releases/latest) and run it.
+   - SmartScreen may say "Windows protected your PC" (the app isn't signed by a company):
+     click **More info › Run anyway**.
+   - Click **Install**. H.I.B goes to the Start menu and to **Settings › Apps**, where you can
+     uninstall it like any app. No administrator rights needed.
+   - When Windows Firewall asks, allow **Private networks**.
+3. **Pair:** open H.I.B on the phone, tap **Scan**, and scan the QR code H.I.B shows on the PC.
+4. **Mirroring (optional):** click **Mirror** on the PC. H.I.B walks you through it step by step —
+   it opens the right screens on your phone, you scan one more QR code, done. Nothing to install,
+   no terminal.
+
+## What you get
+
+- Phone notifications on the PC, with replies and actions
+- Calls, clipboard both ways, media controls, battery
+- **Flick:** point your phone at the PC (or any of its screens) and throw anything onto it;
+  flick files back to the phone or to your other computers
+- **Devices:** send files and text between the phone and every computer
+- Phone screen mirroring, phone apps in their own windows, phone audio on the PC (scrcpy)
+- Find My phone, ring the phone, Phone Agent
+
+## Credits and licence
+
+- Works with the H.I.B Android app, a modified build of
+  [AirSync](https://github.com/sameerasw/airsync-android) by Sameera Sandakelum (sameerasw)
+  (MPL 2.0 with additional terms). H.I.B is not affiliated with or endorsed by AirSync.
+- Bundles [scrcpy](https://github.com/Genymobile/scrcpy) and adb — see
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- This Windows app: Mozilla Public License 2.0 ([LICENSE](LICENSE)).
+
+---
+
+# For developers
 
 ## Build, test, publish
 
