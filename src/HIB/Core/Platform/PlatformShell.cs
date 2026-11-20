@@ -86,7 +86,7 @@ public static class AutoStart
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKey, true);
-            if (enabled) key.SetValue(ValueName, $"\"{PlatformShell.ExecutablePath}\" --minimized");
+            if (enabled) key.SetValue(ValueName, HIB.Core.Install.InstallLayout.RunCommand(PlatformShell.ExecutablePath));
             else key.DeleteValue(ValueName, false);
             return true;
         }

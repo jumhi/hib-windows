@@ -24,8 +24,24 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// <summary>Set by Program for H.I.B-Setup.exe / --install / --uninstall: shows only the Setup window.</summary>
+    public static HIB.Core.Install.SetupRequest Setup { get; set; } = HIB.Core.Install.SetupRequest.None;
+
     public override void OnFrameworkInitializationCompleted()
     {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime setupDesktop && Setup.Action != HIB.Core.Install.SetupAction.None)
+        {
+            setupDesktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            var exe = HIB.Core.Platform.PlatformShell.ExecutablePath;
+            var vm = new SetupViewModel(Setup.Action, HIB.Core.Install.Installer.ForThisPc(),
+                HIB.Core.Install.InstallSource.FromRunningApp(exe), exe);
+            var setupWindow = new SetupWindow(vm);
+            setupDesktop.MainWindow = setupWindow;
+            setupWindow.Show();
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;

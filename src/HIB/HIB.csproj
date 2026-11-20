@@ -26,12 +26,33 @@
     <ProjectReference Include="..\HIB.Features\HIB.Features.csproj" />
   </ItemGroup>
 
-  <!-- Windows tools (adb.exe, scrcpy.exe + DLLs) placed in <repo>/tools/win-x64 are copied to
-       <publish>/tools next to HIB.exe (never embedded in the single file). AdbLocator looks there first. -->
-  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' And Exists('..\..\tools\win-x64')">
-    <None Include="..\..\tools\win-x64\**\*" Link="tools\%(RecursiveDir)%(Filename)%(Extension)"
+  <PropertyGroup>
+    <!-- adb.exe, scrcpy.exe + DLLs (the official scrcpy win64 zip), overridable with -p:HibToolsDir=… -->
+    <HibToolsDir Condition="'$(HibToolsDir)' == ''">$(MSBuildProjectDirectory)\..\..\tools\win-x64</HibToolsDir>
+  </PropertyGroup>
+
+  <!-- Portable build: the tools in HibToolsDir are copied to <publish>/tools next to HIB.exe (never
+       embedded in the single file). AdbLocator looks there first. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' And '$(HibSetup)' != 'true' And Exists('$(HibToolsDir)')">
+    <None Include="$(HibToolsDir)\**\*" Link="tools\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
+
+  <!-- Setup build (-p:HibSetup=true → H.I.B-Setup.exe): the same app with the tools embedded as one zip
+       resource. Started as *Setup*.exe it installs itself to %LOCALAPPDATA%\Programs\H.I.B (Core/Install).
+       Its own obj/bin folders, so a later portable build never reuses a DLL that carries the zip. -->
+  <PropertyGroup Condition="'$(HibSetup)' == 'true'">
+    <IntermediateOutputPath>obj\setup\$(Configuration)\</IntermediateOutputPath>
+    <OutputPath>bin\setup\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+  <Target Name="HibEmbedTools" BeforeTargets="BeforeBuild" Condition="'$(HibSetup)' == 'true'">
+    <Error Condition="!Exists('$(HibToolsDir)')" Text="HibSetup needs adb/scrcpy in $(HibToolsDir) (unzip the official scrcpy win64 release there)." />
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <ZipDirectory SourceDirectory="$(HibToolsDir)" DestinationFile="$(IntermediateOutputPath)hib-tools.zip" Overwrite="true" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)hib-tools.zip" LogicalName="HIB.Tools.zip" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />

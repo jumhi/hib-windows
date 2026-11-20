@@ -404,6 +404,7 @@ public partial class SettingsViewModel : ViewModelBase
         Discovery = s.Discovery;
         StartWithWindows = AutoStart.IsEnabled;
         NewName = s.DesktopName ?? "";
+        (OfferInstall, IsInstalled, InstallDir) = HIB.Core.Install.SetupLauncher.Status();
         _loading = false;
         RefreshFlick();
         app.Flick.Picker.TeachingStepChanged += (_, _, _) => Ui.Post(RefreshFlick);
@@ -505,6 +506,20 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand] void StopTeaching() { _app.Flick.CancelTeaching(); RefreshFlick(); }
     [RelayCommand] void ForgetScreens() { _app.Flick.Picker.ForgetAims(); RefreshFlick(); }
     [RelayCommand] void OpenDataFolder() => PlatformShell.Open(_app.Core.Options.DataDir);
+
+    // ---- install (Windows): an unzipped copy offers to install itself; the installed copy can uninstall ----
+    public bool OfferInstall { get; }
+    public bool IsInstalled { get; }
+    public string InstallDir { get; } = "";
+    [ObservableProperty] public partial string InstallStatus { get; set; } = "";
+
+    [RelayCommand]
+    void InstallOnThisPc()
+        => InstallStatus = HIB.Core.Install.SetupLauncher.StartInstall() ? "" : "Couldn't open Setup. Download H.I.B-Setup.exe instead.";
+
+    [RelayCommand]
+    void UninstallFromThisPc()
+        => InstallStatus = HIB.Core.Install.SetupLauncher.StartUninstall() ? "" : "Couldn't open the uninstaller. Use Settings › Apps › H.I.B.";
 }
 
 // =====================================================================
