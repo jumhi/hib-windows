@@ -195,24 +195,29 @@ public partial class PhoneViewModel : ViewModelBase
     [RelayCommand]
     async Task MirrorScreen()
     {
-        var s = await Mirror.StartMirrorAsync(_f.DeviceNameForWindows);
-        Status = s is null ? Mirror.LastError ?? "Couldn't start mirroring." : "Mirroring in a separate window.";
+        Status = "Starting mirroring…";
+        var s = await _f.Launcher.MirrorAsync();
+        Status = s is null ? Problem("Couldn't start mirroring.") : "Mirroring in a separate window.";
     }
 
     [RelayCommand]
     async Task DesktopMode()
     {
-        var s = await Mirror.StartDesktopAsync(_f.DeviceNameForWindows);
-        Status = s is null ? Mirror.LastError ?? "Couldn't start desktop mode." : "Desktop mode opened.";
+        Status = "Starting desktop mode…";
+        var s = await _f.Launcher.DesktopAsync();
+        Status = s is null ? Problem("Couldn't start desktop mode.") : "Desktop mode opened.";
     }
+
+    string Problem(string fallback) => _f.Launcher.LastProblem is { Length: > 0 } why ? why : fallback;
 
     [RelayCommand] void StopMirroring() => Mirror.StopAll();
 
     [RelayCommand]
     async Task OpenApp(PhoneAppItem item)
     {
-        var s = await Mirror.StartAppAsync(_f.DeviceNameForWindows, item.Package, item.Name);
-        Status = s is null ? Mirror.LastError ?? $"Couldn't open {item.Name}." : $"{item.Name} opened in its own window.";
+        Status = $"Opening {item.Name}…";
+        var s = await _f.Launcher.AppAsync(item.Package, item.Name);
+        Status = s is null ? Problem($"Couldn't open {item.Name}.") : $"{item.Name} opened in its own window.";
     }
 
     [RelayCommand] void ToggleAudio() => Audio.Toggle();

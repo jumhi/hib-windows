@@ -108,6 +108,7 @@ public sealed class HibCore : IDisposable
             if (_log.Count > 500) _log.RemoveRange(0, _log.Count - 500);
         }
         System.Diagnostics.Debug.WriteLine(stamped);
+        HIB.Features.HibLog.Write("app", line); // hib.log (only once the app started it; scrubbed of keys)
         LogAdded?.Invoke(stamped);
     }
 

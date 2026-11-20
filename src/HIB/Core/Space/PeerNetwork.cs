@@ -28,6 +28,8 @@ public sealed class PeerNetworkOptions
     /// (the Mac does the same; the duplicate rule still settles it if both dial).
     /// </summary>
     public TimeSpan PoliteDelay { get; set; } = TimeSpan.FromSeconds(1.5);
+    /// <summary>What a linked computer's <c>peerDiag</c> gets (tests inject; default: the tail of hib.log).</summary>
+    public Func<string>? DiagnosticsLog { get; set; }
 }
 
 /// <summary>
@@ -147,7 +149,7 @@ public sealed class PeerNetwork : IDisposable
 
     PeerLink Create(WebSocket ws, IDisposable? owner, byte[] key, bool isClient, string remoteIp)
     {
-        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp) { Log = WriteLog, Admit = AdmitLink };
+        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp) { Log = WriteLog, Admit = AdmitLink, DiagnosticsLog = _options.DiagnosticsLog };
         lock (_gate) _all.Add(link);
         link.HelloCompleted += OnHello;
         link.Closed += OnClosed;

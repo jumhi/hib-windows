@@ -289,7 +289,7 @@
           <Button Classes="split" Padding="14,0,10,0" CornerRadius="19,0,0,19" Command="{Binding MirrorCommand}" ToolTip.Tip="Show the phone screen in a window">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="16"/>
-              <TextBlock Text="Mirror" FontSize="13.5" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding MirrorLabel}" FontSize="13.5" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
           <Border Width="1" Background="#26FFFFFF" Margin="0,10"/>
@@ -312,7 +312,7 @@
           <Button Classes="split" Padding="14,0,10,0" CornerRadius="19,0,0,19" Command="{Binding DesktopCommand}" ToolTip.Tip="Phone desktop mode in a window">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <c:Icon Data="{x:Static vm:Icons.Monitor}" Size="16"/>
-              <TextBlock Text="Desktop" FontSize="13.5" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding DesktopLabel}" FontSize="13.5" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
           <Border Width="1" Background="#26FFFFFF" Margin="0,10"/>

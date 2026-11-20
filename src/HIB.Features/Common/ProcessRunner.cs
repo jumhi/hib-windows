@@ -26,6 +26,9 @@ public static class ProcessRunner
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
+            // adb and scrcpy write UTF-8 (device names like "Haitham’s S26"); a GUI app has no console code page.
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         if (environment != null)

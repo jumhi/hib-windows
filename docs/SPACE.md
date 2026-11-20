@@ -140,7 +140,7 @@ Every field from §6.22 stays the same. The new fields are:
   compute this the same way.
 - **Keepalive:** `{"type":"ping"}` every 10 s, answered with `pong`. Drop the link after 30 s with no frames.
 - **Messages on the link:**
-  - `peerHello`, `ping`, `pong`
+  - `peerHello`, `ping`, `pong`, `peerDiag` / `peerDiagLog` (below)
   - `peerActivity` (same data as `desktopActivity`, §3.1): send it on link-up, on change and every 30 s
   - **Files**, using the §6.9 sender and receiver exactly, with the peer link as the socket:
     1. The sender first sends `flickStart`:
@@ -154,6 +154,16 @@ Every field from §6.22 stays the same. The new fields are:
     shows the card. A link opens if auto-open is on; text is copied.
   - **Not sent on the link:** `clipboardUpdate`. The phone already shares the clipboard with every
     computer, so sending it here would cause loops.
+  - **Diagnostics (read another computer's log):**
+    - Request: `{"type":"peerDiag","data":{}}`
+    - Reply: `{"type":"peerDiagLog","data":{"version":"4.1.0","text":"<the last 256 KB of the log>"}}`
+    - Answered only on an authenticated link, after a valid `peerHello`. Before the hello it is ignored
+      like every other message.
+    - `text` is UTF-8, starts at a line boundary, and is scrubbed of the pairing key, the space key, API
+      keys and anything key- or token-shaped.
+    - On Windows the log is `%LOCALAPPDATA%\H.I.B\logs\hib.log` (or `$HIB_DATA_DIR/logs/hib.log`): at most
+      2 MB plus one rotation (`hib.log.1`). It holds the ADB console, scrcpy command lines and output, and
+      the app trace.
 - **Sending a file from one computer to another:**
   1. Use the direct link if it is up.
   2. Otherwise relay through the phone (§6.22 `relayTo`).

@@ -115,6 +115,13 @@ public sealed class PeerLink : ILinkSession, IDisposable
     internal event Action<PeerLink>? ActivityChanged;
     internal event Action<PeerLink>? Closed;
     internal Action<string>? Log;
+    /// <summary>The log text a <c>peerDiag</c> request gets (SPACE.md §3.3); default: the tail of hib.log.</summary>
+    internal Func<string>? DiagnosticsLog;
+
+    /// <summary>The most log text one <c>peerDiagLog</c> carries.</summary>
+    public const int DiagnosticsMaxBytes = HIB.Features.HibLog.DiagnosticsTailBytes;
+
+    static string AppVersion => typeof(PeerLink).Assembly.GetName().Version?.ToString(3) ?? "?";
 
     public Task<bool> SendAsync(string type, object? data = null, CancellationToken cancellationToken = default)
         => SendRawAsync(type, data, cancellationToken, requireHello: true);
@@ -258,6 +265,13 @@ public sealed class PeerLink : ILinkSession, IDisposable
 
         if (!_helloDone) return; // nothing else before hello
 
+        if (type == "peerDiag")
+        {
+            // Only here, after a valid peerHello on a link that decrypts with the space key.
+            _ = Task.Run(SendDiagnosticsAsync);
+            return;
+        }
+
         if (type == "peerActivity")
         {
             PeerInUse = data.Bool("inUse") ?? false;
@@ -274,6 +288,24 @@ public sealed class PeerLink : ILinkSession, IDisposable
             try { h(this, args); }
             catch (Exception ex) { Log?.Invoke($"Peer handler for {type} threw: {ex.Message}"); }
         }
+    }
+
+    /// <summary>Answers <c>peerDiag</c> with <c>peerDiagLog {version, text}</c>: the newest ≤ 256 KB of the log, scrubbed.</summary>
+    async Task SendDiagnosticsAsync()
+    {
+        string text;
+        try { text = DiagnosticsLog?.Invoke() ?? HIB.Features.HibLog.Tail(DiagnosticsMaxBytes); }
+        catch (Exception ex) { text = "(couldn't read the log: " + ex.Message + ")"; }
+        text = HIB.Features.LogScrubber.Scrub(text);
+        if (Encoding.UTF8.GetByteCount(text) > DiagnosticsMaxBytes)
+        {
+            var bytes = Encoding.UTF8.GetBytes(text);
+            text = Encoding.UTF8.GetString(bytes, bytes.Length - DiagnosticsMaxBytes, DiagnosticsMaxBytes);
+            var nl = text.IndexOf('\n');
+            if (nl >= 0) text = text[(nl + 1)..];
+        }
+        Log?.Invoke($"Peer {PeerName} asked for diagnostics; sending {Encoding.UTF8.GetByteCount(text) / 1024} KB of log");
+        await SendAsync("peerDiagLog", new { version = AppVersion, text }).ConfigureAwait(false);
     }
 
     void Touch() => Interlocked.Exchange(ref _lastActivityTicks, DateTime.UtcNow.Ticks);

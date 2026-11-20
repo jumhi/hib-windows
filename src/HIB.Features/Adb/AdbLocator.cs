@@ -55,15 +55,61 @@ public sealed class AdbLocator
     /// Environment for launching scrcpy: <c>PATH=&lt;adbDir&gt;;$PATH</c> and <c>ADB=&lt;adbPath&gt;</c>
     /// (the Mac's PhoneADBTarget.adbEnvironment), so scrcpy uses the same adb server we do.
     /// </summary>
-    public static Dictionary<string, string> AdbEnvironment(string adbPath)
+    public static Dictionary<string, string> AdbEnvironment(string adbPath, string? scrcpyPath = null)
+        => AdbEnvironment(adbPath, scrcpyPath, OperatingSystem.IsWindows() ? WindowsShortPath : null);
+
+    internal static Dictionary<string, string> AdbEnvironment(string adbPath, string? scrcpyPath, Func<string, string?>? shortPath)
     {
         var env = new Dictionary<string, string>();
         var dir = Path.GetDirectoryName(adbPath) ?? "";
         var path = Environment.GetEnvironmentVariable("PATH") ?? "";
         env["PATH"] = dir + Path.PathSeparator + path;
-        env["ADB"] = adbPath;
+        var adb = ScrcpySafeAdbPath(adbPath, shortPath);
+        if (adb is not null) env["ADB"] = adb;
+        else if (scrcpyPath is not null && SameDirectory(adbPath, scrcpyPath))
+        {
+            // No space-free name for adb: leave ADB unset (not empty: scrcpy would run ""). scrcpy then runs
+            // plain "adb", and Windows looks in scrcpy.exe's own folder first, which holds this very adb.exe.
+            HibFeatures.Trace($"[adb-locator] {adbPath} has a space and no short name; scrcpy will use the adb next to it.");
+        }
+        else env["ADB"] = adbPath;
         return env;
     }
+
+    /// <summary>
+    /// scrcpy on Windows runs <c>%ADB%</c> without quoting it, so a path with a space ("C:\Program Files\…",
+    /// "C:\Users\First Last\…") breaks every adb call it makes. Returns the path unchanged when it has no
+    /// space, its 8.3 short form when that has none, otherwise null.
+    /// </summary>
+    internal static string? ScrcpySafeAdbPath(string adbPath, Func<string, string?>? shortPath)
+    {
+        if (!adbPath.Contains(' ')) return adbPath;
+        if (shortPath is null) return adbPath; // macOS/Linux: execvp takes argv as-is
+        string? s = null;
+        try { s = shortPath(adbPath); } catch { }
+        return !string.IsNullOrEmpty(s) && !s.Contains(' ') ? s : null;
+    }
+
+    private static bool SameDirectory(string a, string b)
+    {
+        try
+        {
+            return string.Equals(Path.GetFullPath(Path.GetDirectoryName(a) ?? ""), Path.GetFullPath(Path.GetDirectoryName(b) ?? ""),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch { return false; }
+    }
+
+    private static string? WindowsShortPath(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        var buffer = new System.Text.StringBuilder(1024);
+        var n = GetShortPathNameW(path, buffer, buffer.Capacity);
+        return n > 0 && n < buffer.Capacity ? buffer.ToString() : null;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetShortPathNameW(string longPath, System.Text.StringBuilder shortPath, int bufferLength);
 
     private string? Find(string name, IEnumerable<string> fallbacks)
     {

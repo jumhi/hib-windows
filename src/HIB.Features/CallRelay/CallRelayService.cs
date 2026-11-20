@@ -310,7 +310,7 @@ public sealed class CallAudioRelay : ObservableObject, IDisposable
         if (adbPath is null) { LastError = "adb isn't installed."; return; }
 
         var source = CallAudioArgs.Sources[attempt];
-        var psi = ProcessRunner.CreateStartInfo(scrcpy, CallAudioArgs.Build(serial, source), AdbLocator.AdbEnvironment(adbPath));
+        var psi = ProcessRunner.CreateStartInfo(scrcpy, CallAudioArgs.Build(serial, source), AdbLocator.AdbEnvironment(adbPath, scrcpy));
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         lock (_tail) _tail.Clear();
         void OnLine(object? _, DataReceivedEventArgs e)

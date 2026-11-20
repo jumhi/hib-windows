@@ -47,8 +47,16 @@ public static class HibFeatures
         else dispatcher(action);
     }
 
+    /// <summary>Diagnostics: to <see cref="Log"/> (the app's log, which also feeds hib.log), or straight to
+    /// hib.log when no sink is set.</summary>
     internal static void Trace(string message)
     {
-        try { Log?.Invoke(message); } catch { }
+        try
+        {
+            var log = Log;
+            if (log is null) HibLog.Write("trace", message);
+            else log(message);
+        }
+        catch { }
     }
 }

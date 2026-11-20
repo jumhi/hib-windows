@@ -111,7 +111,9 @@ public sealed class PhoneAudioBridge : ObservableObject, IDisposable
         var adbPath = _adb.AdbPath;
         if (adbPath is null) { Fail("adb isn't installed."); return; }
 
-        var psi = ProcessRunner.CreateStartInfo(scrcpy, BuildArguments(serial, KeepPlayingOnPhone), AdbLocator.AdbEnvironment(adbPath));
+        var audioArgs = BuildArguments(serial, KeepPlayingOnPhone);
+        HibFeatures.Trace($"[audio] Launching scrcpy: {scrcpy} {string.Join(' ', audioArgs)}");
+        var psi = ProcessRunner.CreateStartInfo(scrcpy, audioArgs, AdbLocator.AdbEnvironment(adbPath, scrcpy));
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         lock (_outputTail) _outputTail.Clear();
 
@@ -123,6 +125,7 @@ public sealed class PhoneAudioBridge : ObservableObject, IDisposable
                 _outputTail.Append(e.Data).Append('\n');
                 if (_outputTail.Length > 2000) _outputTail.Remove(0, _outputTail.Length - 2000);
             }
+            HibLog.Write("scrcpy-audio", e.Data);
             if (IsStarting && (e.Data.Contains("Device:") || e.Data.Contains("audio")))
                 MarkActive(process);
         }
@@ -181,7 +184,7 @@ public sealed class PhoneAudioBridge : ObservableObject, IDisposable
         {
             string tail;
             lock (_outputTail) tail = _outputTail.ToString();
-            var detail = tail.Split('\n').LastOrDefault(l => l.Contains("ERROR")) ?? $"scrcpy stopped (code {code}).";
+            var detail = ScrcpyOutput.ExtractError(tail) ?? $"scrcpy stopped (code {code}).";
             LastError = detail;
         }
         NotifyPhone();
