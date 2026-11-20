@@ -5,4 +5,6 @@ out/
 .vs/
 .idea/
 TestResults/
-tools/
+tools/*
+!tools/publish-release.sh
+dist/

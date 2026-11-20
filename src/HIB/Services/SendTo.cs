@@ -87,22 +87,55 @@ public static class SendToPipe
         }
     }
 
-    /// <summary>Serves requests until <paramref name="ct"/> is cancelled.</summary>
-    public static async Task ServeAsync(Action<SendToRequest> onRequest, CancellationToken ct)
+    /// <summary>The message that asks a running H.I.B to quit (sent by Setup and the uninstaller).</summary>
+    public const string QuitMessage = "{\"quit\":true}";
+
+    /// <summary>Asks a running H.I.B to quit. False when none is listening.</summary>
+    public static bool TrySendQuit(int timeoutMs = 1200, string? pipeName = null)
+    {
+        try
+        {
+            using var client = new NamedPipeClientStream(".", pipeName ?? Name, PipeDirection.Out, PipeOptions.CurrentUserOnly);
+            client.Connect(timeoutMs);
+            client.Write(Encoding.UTF8.GetBytes(QuitMessage));
+            client.Flush();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool IsQuit(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                   && doc.RootElement.TryGetProperty("quit", out var q) && q.ValueKind == JsonValueKind.True;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Serves requests until <paramref name="ct"/> is cancelled; <paramref name="onQuit"/> handles Setup's "quit".</summary>
+    public static async Task ServeAsync(Action<SendToRequest> onRequest, CancellationToken ct, Action? onQuit = null, string? pipeName = null)
     {
         while (!ct.IsCancellationRequested)
         {
             NamedPipeServerStream? server = null;
             try
             {
-                server = new NamedPipeServerStream(Name, PipeDirection.In, 4, PipeTransmissionMode.Byte,
+                server = new NamedPipeServerStream(pipeName ?? Name, PipeDirection.In, 4, PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await server.WaitForConnectionAsync(ct).ConfigureAwait(false);
                 using var ms = new MemoryStream();
                 using var read = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 read.CancelAfter(TimeSpan.FromSeconds(5));
                 await server.CopyToAsync(ms, read.Token).ConfigureAwait(false);
-                if (SendToRequest.FromJson(Encoding.UTF8.GetString(ms.ToArray())) is { } req) onRequest(req);
+                var json = Encoding.UTF8.GetString(ms.ToArray());
+                if (IsQuit(json)) onQuit?.Invoke();
+                else if (SendToRequest.FromJson(json) is { } req) onRequest(req);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
             catch (IOException) { await Task.Delay(500, CancellationToken.None).ConfigureAwait(false); }
@@ -176,7 +209,32 @@ public static class SendToShortcuts
         _lastSignature = "";
     }
 
-    static void CreateShortcut(string path, string target, string args, string description)
+    /// <summary>Points every H.I.B "Send to" shortcut at <paramref name="exePath"/> (after an install moved the app).</summary>
+    public static void Retarget(string exePath)
+    {
+        if (!OperatingSystem.IsWindows() || Folder is not { } folder || !Directory.Exists(folder)) return;
+        foreach (var f in Directory.GetFiles(folder, Prefix + "*.lnk"))
+        {
+            var link = (IShellLinkW)new ShellLink();
+            try
+            {
+                ((IPersistFile)link).Load(f, 2 /* STGM_READWRITE */);
+                link.SetPath(exePath);
+                link.SetIconLocation(exePath, 0);
+                link.SetWorkingDirectory(Path.GetDirectoryName(exePath) ?? "");
+                ((IPersistFile)link).Save(f, true);
+            }
+            catch { }
+            finally
+            {
+                Marshal.FinalReleaseComObject(link);
+            }
+        }
+        _lastSignature = "";
+    }
+
+    /// <summary>Writes a .lnk (also used by Setup for the Start menu and desktop shortcuts).</summary>
+    internal static void CreateShortcut(string path, string target, string args, string description)
     {
         if (!OperatingSystem.IsWindows()) return;
         var link = (IShellLinkW)new ShellLink();

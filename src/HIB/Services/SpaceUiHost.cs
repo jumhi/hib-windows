@@ -76,7 +76,13 @@ public sealed class SpaceUiHost : IDisposable
         }
         catch (Exception ex) { _app.Core.AddLog("Flick shelf failed: " + ex.Message); }
 
-        _ = SendToPipe.ServeAsync(req => Dispatcher.UIThread.Post(() => _ = HandleAsync(req)), _cts.Token);
+        _ = SendToPipe.ServeAsync(req => Dispatcher.UIThread.Post(() => _ = HandleAsync(req)), _cts.Token,
+            // Setup / the uninstaller asks the running copy to quit before replacing or removing it.
+            onQuit: () => Dispatcher.UIThread.Post(() =>
+            {
+                if (_app.MainWindow is HIB.Views.MainWindow mw) mw.AllowClose = true;
+                _app.Quit();
+            }));
         if (SendToRequest.Pending is { } pending)
         {
             SendToRequest.Pending = null;

@@ -11,6 +11,29 @@ dotnet test tests/HIB.FakePhone
 dotnet publish src/HIB/HIB.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o out/win-x64
 ```
 
+Release assets (portable zip + installer) in one go, into `dist/` (nothing is uploaded):
+
+```sh
+tools/publish-release.sh          # add --test to run the tests first
+# dist/HIB-Windows.zip   H.I.B\HIB.exe + tools\ + README.txt (portable, unzip and run)
+# dist/H.I.B-Setup.exe   the same app with tools\ embedded (-p:HibSetup=true); run it to install
+# dist/SHA256SUMS.txt
+```
+
+## Install / uninstall (per user, no admin)
+
+`H.I.B-Setup.exe` (any exe name containing "setup", or `HIB.exe --install`) opens a small Setup window instead of the app:
+it closes a running H.I.B (a `{"quit":true}` on the `--send-to` pipe, then ends older copies), copies `HIB.exe` and the
+tools to `%LOCALAPPDATA%\Programs\H.I.B\`, adds `H.I.B.lnk` to the Start menu (and optionally the desktop), re-points
+Start with Windows and the Explorer "Send to" shortcuts at the installed exe and registers
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\H.I.B` so it shows in Settings › Apps. A newer Setup updates in
+place; `%APPDATA%\HIB` (settings, pairings) is never touched. An unzipped copy shows "Install H.I.B on this PC" in
+Settings › This PC.
+
+`HIB.exe --uninstall` asks first ("Also delete my settings and pairings" is off by default), then removes the Run entry,
+shortcuts, Send to entries and the uninstall key; the folder goes once the process has exited (a hidden `cmd` retrying
+`rmdir`). `--uninstall --quiet` / `--install --quiet` skip the window. The logic is in `src/HIB/Core/Install`.
+
 The app also runs on macOS/Linux for development. Windows-only bits (Start with Windows, firewall rules, native mDNS, clipboard change counter, cursor position) are guarded with `OperatingSystem.IsWindows()`.
 
 ## Test mode / environment variables
@@ -31,7 +54,7 @@ HIB_PORT=16996 dotnet run --project src/HIB
 HIB_QR='airsync://…' HIB_HOLD_SECONDS=30 dotnet test tests/HIB.FakePhone --filter Drive_running_app
 ```
 
-`HIB_SCREENSHOT_DIR=/some/dir dotnet test tests/HIB.FakePhone --filter UiSnapshotTests` renders every page headlessly to PNG.
+`HIB_SCREENSHOT_DIR=/some/dir dotnet test tests/HIB.FakePhone --filter "UiSnapshotTests|SetupWindowTests"` renders every page (and the Setup window) headlessly to PNG; `HIB_INSTALL_ROW=portable|installed` shows the Settings install/uninstall row on any OS.
 `HIB_DESIGN_DIR=/some/dir dotnet test tests/HIB.FakePhone --filter DesignShotsTests` renders every screen at 2× with a fake phone (the `docs/design/windows-*.png` images).
 
 ## Windows Firewall
@@ -53,6 +76,8 @@ To remove them: `netsh advfirewall firewall delete rule name="H.I.B"` (elevated)
 ## adb / scrcpy (Settings › Mirroring & ADB, audio, Phone Agent)
 
 `HIB.Features`' `AdbLocator` looks in `<exe dir>\tools` first, then PATH, the Android SDK, winget/scoop/choco installs.
-The released zip bundles scrcpy 5.0.1 win64 (SHA-256 b12a2c4e…27a5, checked against the release's SHA256SUMS.txt). To bundle them in a local build, unzip the official scrcpy win64 release (it includes `adb.exe`) into `<repo>/tools/win-x64/`; a
-`win-x64` publish copies that folder to `out/win-x64/tools/` next to `HIB.exe` (never into the single file).
+The released zip and H.I.B-Setup.exe bundle scrcpy 5.0.1 win64 (SHA-256 b12a2c4e…27a5, checked against the release's SHA256SUMS.txt). To bundle them in a local build, unzip the official scrcpy win64 release (it includes `adb.exe`) into `<repo>/tools/win-x64/`; a
+`win-x64` publish copies that folder to `out/win-x64/tools/` next to `HIB.exe` (never into the single file); the Setup build
+(`-p:HibSetup=true`, its own `obj/setup`, `bin/setup`) embeds it as the `HIB.Tools.zip` resource instead and unpacks it to
+`%LOCALAPPDATA%\Programs\H.I.B\tools\`. Override the folder with `-p:HibToolsDir=…`.
 Without it, Settings › Mirroring & ADB shows `winget install Genymobile.scrcpy` with a Copy button.

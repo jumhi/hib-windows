@@ -13,6 +13,15 @@ sealed class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // Setup (H.I.B-Setup.exe or --install) and --uninstall: their own small window, no server, no single-instance lock.
+        var setup = HIB.Core.Install.SetupRequest.Detect(Environment.ProcessPath, args);
+        if (setup.Action != HIB.Core.Install.SetupAction.None)
+        {
+            if (setup.Quiet) return HIB.Core.Install.SetupLauncher.RunQuiet(setup);
+            App.Setup = setup;
+            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+
         // Explorer "Send to": hand the files to the running H.I.B over its pipe (SPACE.md §5).
         var sendTo = HIB.Services.SendToRequest.Parse(args);
         if (sendTo is not null && HIB.Services.SendToPipe.TryForward(sendTo)) return 0;

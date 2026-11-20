@@ -9,6 +9,25 @@
     <StackPanel Spacing="14" MaxWidth="760">
       <c:SectionHeader Title="This PC" IconData="{x:Static vm:Icons.Monitor}"/>
 
+      <!-- Running from an unzipped copy: install it properly (Start menu, Settings › Apps, uninstall). -->
+      <Border Classes="card" Padding="16,12" IsVisible="{Binding S.OfferInstall}">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Border Width="34" Height="34" CornerRadius="10" Background="{StaticResource HibCyanSoft}" Margin="0,0,12,0" VerticalAlignment="Center">
+              <c:Icon Data="{x:Static vm:Icons.MonitorDown}" Classes="cyan" Size="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Text="Install H.I.B on this PC" FontWeight="SemiBold"/>
+              <TextBlock Text="Adds it to Start and to Settings › Apps. Your settings and pairings stay." Classes="faint" TextWrapping="Wrap"/>
+            </StackPanel>
+            <Button Grid.Column="2" Classes="primary" Content="Install" Command="{Binding S.InstallOnThisPcCommand}"
+                    VerticalAlignment="Center" Margin="12,0,0,0"/>
+          </Grid>
+          <TextBlock Text="{Binding S.InstallStatus}" IsVisible="{Binding S.InstallStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                     Classes="caption" Foreground="{StaticResource HibWarning}" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
+
       <Border Classes="card">
         <StackPanel Spacing="14">
           <Grid ColumnDefinitions="Auto,*">
@@ -78,6 +97,18 @@
             </StackPanel>
             <Button Grid.Column="2" Content="Open" Command="{Binding S.OpenDataFolderCommand}"/>
           </Grid>
+          <StackPanel Spacing="6" IsVisible="{Binding S.IsInstalled}">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <c:Icon Data="{x:Static vm:Icons.MonitorDown}" Classes="muted" Margin="0,0,10,0"/>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Installed for you on this PC"/>
+                <TextBlock Text="{Binding S.InstallDir}" Classes="faint" TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+              <Button Grid.Column="2" Classes="danger" Content="Uninstall…" Command="{Binding S.UninstallFromThisPcCommand}"/>
+            </Grid>
+            <TextBlock Text="{Binding S.InstallStatus}" IsVisible="{Binding S.InstallStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Classes="caption" Foreground="{StaticResource HibWarning}" TextWrapping="Wrap"/>
+          </StackPanel>
         </StackPanel>
       </Border>
 
