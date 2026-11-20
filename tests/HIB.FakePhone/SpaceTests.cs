@@ -67,7 +67,7 @@ public class SpaceTests
     static object Desk(string id, string platform, bool connected, int port = 0, bool inUse = false, params string[] ips)
         => new { id, name = id, platform, type = platform == "windows" ? "Windows PC" : "MacBook Pro", connected, inUse, idleSeconds = inUse ? 4 : 400, ips, port };
 
-    static string MakePng(string dir, string name, int w = 1600, int h = 1000)
+    internal static string MakePng(string dir, string name, int w = 1600, int h = 1000)
     {
         using var bmp = new SKBitmap(w, h);
         using (var c = new SKCanvas(bmp))

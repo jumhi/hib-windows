@@ -29,6 +29,10 @@ public sealed class AppController
         Current = this;
         Toasts = new ToastManager(() => MainWindow);
         Flick = new FlickPresenter(core.FlickPicker, () => MainWindow);
+        // Every incoming Flick (phone, relay or direct peer link) flies in as the Mac's card.
+        Cards = new HIB.Views.Flick.FlickCardManager(this);
+        // Flick shelf, Explorer "Send to", --send-to pipe (the real desktop app only).
+        if (lifetime is not null) SpaceUi = new SpaceUiHost(this);
 
         core.Link.ConnectionChanged += (_, connected) =>
         {
@@ -39,7 +43,6 @@ public sealed class AppController
         core.Hub.NotificationRemoved += id => Ui.Post(() => Toasts.Close("n:" + id));
         core.Hub.CallChanged += c => Ui.Post(() => OnCall(c));
         core.Hub.CallProgress += _ => _lastCallSignal = DateTime.UtcNow;
-        core.Hub.FlickStarted += f => Ui.Post(() => OnFlick(f));
         core.Files.Received += f => Ui.Post(() => OnFileReceived(f));
         core.Files.Failed += (id, reason) => Ui.Post(() => OnFileFailed(id, reason));
     }
@@ -70,6 +73,8 @@ public sealed class AppController
     public FeatureHost? Features { get; set; }
     public ToastManager Toasts { get; }
     public FlickPresenter Flick { get; }
+    public HIB.Views.Flick.FlickCardManager Cards { get; }
+    public SpaceUiHost? SpaceUi { get; }
     public Window? MainWindow => WindowOverride ?? _lifetime?.MainWindow;
 
     /// <summary>Used when there is no desktop lifetime (headless UI tests).</summary>
@@ -96,6 +101,7 @@ public sealed class AppController
     {
         if (_quitting) return;
         _quitting = true;
+        try { SpaceUi?.Dispose(); } catch { }
         try { Features?.Dispose(); } catch { }
         try { Core.Dispose(); } catch { }
         _lifetime?.Shutdown();
@@ -201,70 +207,9 @@ public sealed class AppController
 
     // ---------------- flick + files ----------------
 
-    void OnFlick(FlickInfo f)
-    {
-        var screen = Flick.PickFor(f);
-        switch (f.Kind)
-        {
-            case "link":
-                var url = f.Text?.Trim();
-                var safe = PlatformShell.IsSafeUrl(url);
-                if (safe && Core.Settings.AutoOpenLinks) PlatformShell.Open(url!);
-                var linkToast = new ToastViewModel
-                {
-                    Caption = "Flick",
-                    Title = safe && Core.Settings.AutoOpenLinks ? "Opened link" : "Link from phone",
-                    Body = url ?? "",
-                    Icon = ImageUtil.AppIcon(),
-                    Image = ImageUtil.FromBytes(f.Thumbnail),
-                    // Clicking the landed card opens the link (like the Mac's Flick card).
-                    OnClick = safe ? () => PlatformShell.Open(url!) : null,
-                };
-                if (safe && !Core.Settings.AutoOpenLinks)
-                    linkToast.Buttons.Add(new ToastButton("Open", () => PlatformShell.Open(url!), "primary"));
-                linkToast.Buttons.Add(new ToastButton("Copy", () => _ = CopyFromPhoneAsync(url ?? "")));
-                Toasts.Show(linkToast, screen);
-                break;
-
-            case "text":
-                var text = f.Text ?? "";
-                _ = CopyFromPhoneAsync(text);
-                Toasts.Show(new ToastViewModel
-                {
-                    Caption = "Flick",
-                    Title = "Text copied",
-                    Body = text.Length > 300 ? text[..300] + "…" : text,
-                    Icon = ImageUtil.AppIcon(),
-                }, screen);
-                break;
-
-            default:
-                Toasts.Show(new ToastViewModel
-                {
-                    Key = "flick:" + f.Id,
-                    Caption = f.From is { Length: > 0 } from ? "From " + from : "Flick",
-                    Title = "Receiving " + (string.IsNullOrWhiteSpace(f.Name) ? f.Kind : f.Name),
-                    Body = f.Size > 0 ? FormatSize(f.Size) : "",
-                    Icon = ImageUtil.AppIcon(),
-                    Image = ImageUtil.FromBytes(f.Thumbnail),
-                    Seconds = 30,
-                }, screen);
-                break;
-        }
-    }
-
-    async Task CopyFromPhoneAsync(string text)
-    {
-        if (string.IsNullOrEmpty(text)) return;
-        // Copy without bouncing it back to the phone.
-        Core.Clipboard?.SuppressNextLocalChange(text);
-        var top = MainWindow;
-        if (top?.Clipboard is { } cb) await Avalonia.Input.Platform.ClipboardExtensions.SetTextAsync(cb, text);
-    }
-
     void OnFileReceived(ReceivedFile f)
     {
-        Toasts.Close("flick:" + f.FlickId);
+        if (f.FlickId is not null) return; // the Flick card shows it
         var isImage = f.Name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || f.Name.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
                       || f.Name.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.Name.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
                       || f.Name.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) || f.Name.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase);
@@ -286,7 +231,7 @@ public sealed class AppController
 
     void OnFileFailed(string id, string reason)
     {
-        Toasts.Close("flick:" + id);
+        if (Cards.OwnsTransfer(id)) return; // shown on the Flick card
         if (reason == "Disconnected") return;
         Toasts.Show(new ToastViewModel { Caption = "File transfer", Title = "Transfer failed", Body = reason, Icon = ImageUtil.AppIcon() });
     }

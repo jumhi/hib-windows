@@ -58,6 +58,8 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; } = true;
     public bool AutoOpenLinks { get; set; } = true;
     public bool Discovery { get; set; } = true;
+    /// <summary>The Flick shelf: a slim pill at the top of the screen that opens into device bubbles while dragging files (Windows).</summary>
+    public bool ShowFlickShelf { get; set; } = true;
 
     // ---- last phone (for wake-up / reconnect) ----
     public string? LastPhoneName { get; set; }

@@ -159,6 +159,8 @@ public sealed class PhoneHub
             d.Long("size") ?? 0, LenientJson.Base64(d.Str("thumbnail")), d.Str("text"))
         {
             Angle = d.Double("angle") ?? 0,
+            ExitXRatio = d.Double("exitXRatio") ?? 0.5,
+            Velocity = d.Double("velocity") ?? 1800,
             Heading = d.Double("heading"),
             Elevation = d.Double("elevation"),
             From = d.Str("from"),
