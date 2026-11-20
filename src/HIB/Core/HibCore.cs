@@ -60,6 +60,7 @@ public sealed class HibCore : IDisposable
         Sender = new FileSender(Link);
         Sender.Log += AddLog;
         Ecosystem = new PhoneEcosystem(Link);
+        Space = new HIB.Core.Space.SpaceDirectory(Link, Ecosystem, Sender);
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Link.ConnectionChanged += (_, connected) =>
         {
@@ -77,6 +78,8 @@ public sealed class HibCore : IDisposable
     /// <summary>The other computers connected to the phone (multi-desktop).</summary>
     public PhoneEcosystem Ecosystem { get; }
     public FlickScreenPicker FlickPicker { get; }
+    /// <summary>Every other device (phone + computers): SPACE.md.</summary>
+    public HIB.Core.Space.SpaceDirectory Space { get; }
     public ClipboardSync? Clipboard { get; private set; }
     public UdpPresence? Udp { get; private set; }
     public MdnsAdvertiser? Mdns { get; private set; }
