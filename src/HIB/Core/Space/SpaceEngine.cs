@@ -1,6 +1,7 @@
 // H.I.B Space engine (docs/SPACE.md §1–§3): the device directory, activity, the direct peer link,
 // Flick in every direction and "Play on…" — behind the SpaceDirectory contract the UI codes against.
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -103,6 +104,10 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
     readonly PeerNetwork _net;
     readonly object _gate = new();
     readonly Dictionary<PeerLink, FileSender> _peerSenders = new();
+    /// <summary>Outgoing transfer id → device id, so phone-link progress can say where it goes.</summary>
+    readonly ConcurrentDictionary<string, string> _transferDevice = new();
+    /// <summary>When each device was last connected (this run); remembered computers fall back to space.json.</summary>
+    readonly ConcurrentDictionary<string, DateTimeOffset> _lastSeen = new(StringComparer.OrdinalIgnoreCase);
     SpaceListState _list = new();
     ActivitySample _own;
     DateTime _lastHeartbeat = DateTime.MinValue;
@@ -128,7 +133,8 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
 
         link.MessageReceived += OnPhoneMessage;
         hub.FlickStarted += RaiseFlickArrived;
-        sender.Progress += RaiseSendProgress;
+        sender.Progress += OnPhoneSendProgress;
+        link.ConnectionChanged += (_, _) => _lastSeen[SpaceIds.Phone] = DateTimeOffset.Now;
 
         if (_options.PeerLinks)
         {
@@ -255,7 +261,10 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
                 int? battery = phone is { BatteryLevel: >= 0 } ? phone.BatteryLevel : list.PhoneBattery is >= 0 ? list.PhoneBattery : null;
                 result.Add(new SpaceDevice(SpaceIds.Phone, phoneName ?? "Phone", SpaceDeviceKind.Phone,
                     list.PhoneModel ?? "Android phone", phoneUp, false,
-                    phoneUp ? SpaceRoute.PhoneLink : SpaceRoute.Unavailable, battery, false));
+                    phoneUp ? SpaceRoute.PhoneLink : SpaceRoute.Unavailable, battery, false)
+                {
+                    LastSeen = phoneUp ? DateTimeOffset.Now : _lastSeen.TryGetValue(SpaceIds.Phone, out var ps) ? ps : null,
+                });
             }
 
             var links = _net.Links.ToDictionary(l => l.PeerId, StringComparer.Ordinal);
@@ -287,8 +296,12 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
                 var viaPhone = phoneUp && entry is { Connected: true };
                 var direct = link is not null;
                 var route = direct ? SpaceRoute.Direct : viaPhone ? SpaceRoute.ViaPhone : SpaceRoute.Unavailable;
-                computers.Add(new SpaceDevice(id, name, kind, type, direct || viaPhone, inUse is not null && SpaceIds.Same(inUse, id),
-                    route, null, playing is not null && SpaceIds.Same(playing, id)));
+                var online = direct || viaPhone;
+                DateTimeOffset? seen = online ? DateTimeOffset.Now
+                    : _lastSeen.TryGetValue(id, out var ls) ? ls
+                    : known is { LastSeen: var kls } && kls != default ? kls : null;
+                computers.Add(new SpaceDevice(id, name, kind, type, online, inUse is not null && SpaceIds.Same(inUse, id),
+                    route, null, playing is not null && SpaceIds.Same(playing, id)) { LastSeen = seen });
             }
             result.AddRange(computers.OrderByDescending(c => c.Online));
             return result;
@@ -345,10 +358,11 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         }
         foreach (var d in state.Desktops)
         {
+            if (d.Connected) _lastSeen[d.Id] = DateTimeOffset.Now;
             if (d.Ips.Count > 0 && d.Port is > 0)
-                _peers.Upsert(d.Id, d.Name, d.Platform, d.Type, d.Ips, d.Port);
+                _peers.Upsert(d.Id, d.Name, d.Platform, d.Type, d.Ips, d.Port, seen: d.Connected);
             else if (_peers.Get(d.Id) is not null)
-                _peers.Upsert(d.Id, d.Name, d.Platform, d.Type, null, null);
+                _peers.Upsert(d.Id, d.Name, d.Platform, d.Type, null, null, seen: d.Connected);
         }
         _net.ResetBackoff();
         RaiseChanged();
@@ -382,7 +396,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
     {
         if (link.Hello is not { } h) return;
         // Remember where it answered from first, then what it says about itself.
-        _peers.Upsert(h.Id, h.Name, h.Platform, h.Type, h.Ips, h.Port > 0 ? h.Port : null, link.RemoteIp);
+        _peers.Upsert(h.Id, h.Name, h.Platform, h.Type, h.Ips, h.Port > 0 ? h.Port : null, link.RemoteIp, seen: true);
         _net.ResetBackoff(h.Id);
     }
 
@@ -394,7 +408,8 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
             LostText = $"The link to {link.PeerName} dropped",
         };
         sender.Log += WriteLog;
-        sender.Progress += RaiseSendProgress;
+        sender.Progress += p => RaiseSendProgress(link.PeerId, p);
+        _lastSeen[link.PeerId] = DateTimeOffset.Now;
         lock (_gate) _peerSenders[link] = sender;
         _files.Attach(link);
         link.MessageReceived += OnPeerMessage;
@@ -404,10 +419,21 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
 
     void OnLinkDown(PeerLink link)
     {
+        _lastSeen[link.PeerId] = DateTimeOffset.Now;
+        _peers.Touch(link.PeerId);
         lock (_gate) _peerSenders.Remove(link);
         _files.Detach(link);
         link.MessageReceived -= OnPeerMessage;
         RaiseChanged();
+    }
+
+    void OnPhoneSendProgress(SendProgress p)
+    {
+        var device = _transferDevice.TryGetValue(p.Id, out var d) ? d
+            // Sent by someone else straight through Core.Sender: guess from the target's name.
+            : Devices.FirstOrDefault(x => !x.IsPhone && string.Equals(x.Name, p.TargetName, StringComparison.OrdinalIgnoreCase))?.Id ?? SpaceIds.Phone;
+        if (p.Done) _transferDevice.TryRemove(p.Id, out _);
+        RaiseSendProgress(device, p);
     }
 
     FileSender? SenderFor(PeerLink link)
@@ -556,6 +582,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         {
             // §3.4: flickStart with a preview first; an old phone ignores it and still gets the file.
             var thumb = await ThumbnailAsync(path, kind).ConfigureAwait(false);
+            _transferDevice[id] = SpaceIds.Phone;
             await Link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size, thumb, toPeer: false), ct).ConfigureAwait(false);
             return await Sender.SendAsync(path, null, target.Name, id, new Dictionary<string, object?> { ["flickId"] = id }, ct).ConfigureAwait(false);
         }
@@ -577,7 +604,11 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         }
 
         if (PhoneRelays(target.Id))
-            return await Sender.SendAsync(path, target.Id, target.Name, ct).ConfigureAwait(false);
+        {
+            var relayId = Guid.NewGuid().ToString();
+            _transferDevice[relayId] = target.Id;
+            return await Sender.SendAsync(path, target.Id, target.Name, relayId, null, ct).ConfigureAwait(false);
+        }
 
         return new SendResult(id, name, false, $"{target.Name} isn't reachable");
     }

@@ -149,9 +149,12 @@ public class SpaceTests
         Assert.Equal("Office PC", space.InUseId);
         Assert.Equal("phone", space.DefaultTarget?.Id);
         Assert.True(space.ThisDevice.InUse);
+        Assert.True(space.ThisDeviceInUse);
         Assert.False(space.Devices.Any(d => d.InUse));
 
         // Using a computer makes it "the last one used".
+        var progress = new List<string>();
+        space.SendProgress += (device, _) => { lock (progress) progress.Add(device); };
         var file = Path.Combine(host.Root, "a.txt");
         File.WriteAllText(file, "hello");
         var send = space.SendFilesAsync("Studio PC", new[] { file });
@@ -163,6 +166,7 @@ public class SpaceTests
         await phone.WaitForAsync("fileTransferComplete");
         await phone.SendAsync("transferVerified", new { id, verified = true });
         Assert.True((await send).Single().Ok);
+        lock (progress) Assert.All(progress, d => Assert.Equal("Studio PC", d)); // relayed progress names the computer, not the phone
         Assert.Equal("Studio PC", space.LastTargetId);
         Assert.Equal("Studio PC", space.DefaultTarget?.Id);
 
@@ -268,6 +272,32 @@ public class SpaceTests
         Assert.Contains("127.0.0.1", b.Core.SpaceEngine.KnownPeers.Single(p => p.Id == "A PC").Ips);
     }
 
+    [Fact]
+    public async Task Computers_stay_listed_when_the_phone_drops_and_keep_their_direct_route()
+    {
+        var (a, b) = await TwoLinkedComputersAsync();
+        await using var _a = a;
+        await using var _b = b;
+        var phone = await a.ConnectPhoneAsync();
+        await phone.SendAsync("desktopsList", DesktopsList("A PC", null, null, SpaceKey,
+            Desk("B Mac", "mac", true, b.Core.Link.Port, false, "127.0.0.1"), Desk("Studio PC", "windows", true, 6996, false, "10.0.0.7")));
+        Assert.True(await Eventually.TrueAsync(() => a.Core.Space.Find("Studio PC")?.Route == SpaceRoute.ViaPhone));
+        Assert.NotNull(a.Core.Space.Find("Studio PC")!.LastSeen);
+
+        await phone.DisposeAsync();
+        Assert.True(await Eventually.TrueAsync(() => !a.Core.Link.IsConnected));
+        var devices = a.Core.Space.Devices;
+        // The phone is still listed (offline, last seen just now); computers don't vanish with it.
+        var p = devices.Single(d => d.IsPhone);
+        Assert.False(p.Online);
+        Assert.NotNull(p.LastSeen);
+        Assert.Equal(SpaceRoute.Direct, devices.Single(d => d.Id == "B Mac").Route);
+        var studio = devices.Single(d => d.Id == "Studio PC");
+        Assert.False(studio.Online);
+        Assert.Equal(SpaceRoute.Unavailable, studio.Route);
+        Assert.True(DateTimeOffset.Now - studio.LastSeen!.Value < TimeSpan.FromMinutes(1));
+    }
+
     /// <summary>Dials <paramref name="port"/>/peer as <paramref name="id"/>; returns (got a peerHello, close code).</summary>
     static async Task<(bool hello, int? close, ClientWebSocket ws)> RawDialAsync(int port, string id, bool waitForClose)
     {
@@ -368,8 +398,8 @@ public class SpaceTests
         ReceivedFile? received = null;
         b.Core.Space.FlickArrived += f => flick = f;
         b.Core.Files.Received += f => received = f;
-        var progress = new List<SendProgress>();
-        a.Core.Space.SendProgress += p => { lock (progress) progress.Add(p); };
+        var progress = new List<(string device, SendProgress p)>();
+        a.Core.Space.SendProgress += (device, p) => { lock (progress) progress.Add((device, p)); };
 
         var png = MakePng(a.Root, "holiday.png");
         var results = await a.Core.Space.SendFilesAsync("B Mac", new[] { png });
@@ -385,7 +415,7 @@ public class SpaceTests
         Assert.True(flick.Thumbnail!.Length <= FlickThumbnail.MaxBytes);
         Assert.Equal(0xFF, flick.Thumbnail[0]); // JPEG SOI
         Assert.Equal(0xD8, flick.Thumbnail[1]);
-        lock (progress) Assert.Contains(progress, p => p.Done && !p.Failed && p.TargetName == "B Mac");
+        lock (progress) Assert.Contains(progress, x => x.device == "B Mac" && x.p.Done && !x.p.Failed && x.p.TargetName == "B Mac");
         Assert.Equal("B Mac", a.Core.Space.LastTargetId);
     }
 
@@ -559,6 +589,7 @@ public class SpaceTests
         Assert.True(await space.PlayHereAsync(true));
         Assert.Equal(1, audio.Starts);
         Assert.Equal("Office PC", space.PlayingOn);
+        Assert.True(space.IsPlayingHere);
         Assert.True(space.ThisDevice.IsPlayingAudio);
         Assert.True(await space.PlayHereAsync(false));
         Assert.Equal(1, audio.Stops);
@@ -566,6 +597,7 @@ public class SpaceTests
         // The phone says the Mac plays now.
         await phone.SendAsync("desktopsList", DesktopsList("Office PC", null, "Haitham’s MacBook", null, Desk("Haitham’s MacBook", "mac", true)));
         Assert.True(await Eventually.TrueAsync(() => space.PlayingOn == "Haitham’s MacBook"));
+        Assert.False(space.IsPlayingHere);
         Assert.True(space.Find("Haitham’s MacBook")!.IsPlayingAudio);
     }
 }

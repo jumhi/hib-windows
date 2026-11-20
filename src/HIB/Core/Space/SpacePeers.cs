@@ -81,7 +81,7 @@ public sealed class SpacePeerStore
     /// Adds or refreshes a peer. <paramref name="preferredIp"/> (the address that just worked) goes first.
     /// Returns true when something the dialler cares about changed.
     /// </summary>
-    public bool Upsert(string id, string? name, string? platform, string? type, IEnumerable<string>? ips, int? port, string? preferredIp = null)
+    public bool Upsert(string id, string? name, string? platform, string? type, IEnumerable<string>? ips, int? port, string? preferredIp = null, bool seen = false)
     {
         if (string.IsNullOrWhiteSpace(id)) return false;
         bool changed, stale;
@@ -107,15 +107,27 @@ public sealed class SpacePeerStore
                 Type = string.IsNullOrWhiteSpace(type) ? old?.Type ?? "" : type!,
                 Ips = merged,
                 Port = port is > 0 and < 65536 ? port.Value : old?.Port ?? 0,
-                LastSeen = DateTimeOffset.Now,
+                // Only a connection counts as "seen" (a list entry for an offline computer doesn't).
+                LastSeen = seen ? DateTimeOffset.Now : old?.LastSeen ?? default,
             };
             changed = old is null || old.Port != updated.Port || !old.Ips.SequenceEqual(updated.Ips)
                       || old.Name != updated.Name || old.Platform != updated.Platform || old.Type != updated.Type;
-            stale = old is null || updated.LastSeen - old.LastSeen > TimeSpan.FromMinutes(10);
+            stale = old is null || updated.LastSeen - old.LastSeen > TimeSpan.FromMinutes(10) || (old.LastSeen == default && seen);
             _peers[id] = changed || stale ? updated : updated with { LastSeen = old!.LastSeen };
         }
         if (changed || stale) Save();
         return changed;
+    }
+
+    /// <summary>Marks a known computer as seen just now (a link dropped, the phone listed it connected).</summary>
+    public void Touch(string id)
+    {
+        lock (_gate)
+        {
+            if (!_peers.TryGetValue(id, out var p)) return;
+            _peers[id] = p with { LastSeen = DateTimeOffset.Now };
+        }
+        Save();
     }
 
     public void Remove(string id)
