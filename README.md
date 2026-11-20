@@ -24,9 +24,14 @@ You need: a Windows 10/11 PC and an Android phone (Android 11+), on the same Wi-
      uninstall it like any app. No administrator rights needed.
    - When Windows Firewall asks, allow **Private networks**.
 3. **Pair:** open H.I.B on the phone, tap **Scan**, and scan the QR code H.I.B shows on the PC.
-4. **Mirroring (optional):** click **Mirror** on the PC. H.I.B walks you through it step by step —
-   it opens the right screens on your phone, you scan one more QR code, done. Nothing to install,
-   no terminal.
+4. **Mirroring (optional):** click **Mirror** on the PC. A **Set up mirroring** card walks you through
+   it, ticking each step as your phone reports it — nothing to install, no terminal:
+   1. **Developer options:** click **Show me on the phone**, then tap **Build number** 7 times.
+   2. **Wireless debugging:** click **Open it on the phone** and switch it on (tap **Allow** if the phone
+      asks about the network).
+   3. **Pair this PC:** on the phone, **Wireless debugging › Pair device with QR code**, and scan the code
+      on the PC. Or choose **Use a pairing code instead** and type the 6 digits the phone shows.
+   4. **Mirroring is ready** — click **Mirror**. You only do this once per PC.
 
 ## What you get
 

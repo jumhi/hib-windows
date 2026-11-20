@@ -79,7 +79,7 @@ public sealed class AdbService : ObservableObject
     }
 
     /// <summary>Raised (non-silent connects only) when every port failed. The UI shows the text and
-    /// offers "Pair with ADB QR".</summary>
+    /// offers "Set up mirroring".</summary>
     public event Action<AdbConnectResult>? ConnectionFailed;
 
     /// <summary>
@@ -126,9 +126,21 @@ public sealed class AdbService : ObservableObject
 
     // MARK: - Raw commands
 
+    /// <summary>Tests: answers adb commands instead of a real adb (nothing touches a phone).</summary>
+    internal Func<IReadOnlyList<string>, CancellationToken, Task<ProcessResult>>? CommandRunner { get; set; }
+
+    /// <summary>adb is available (the bundled one, normally).</summary>
+    public bool HasAdb => CommandRunner is not null || AdbPath is not null;
+
+    /// <summary>Text for "adb is missing" — never "install platform-tools" (H.I.B ships its own adb).</summary>
+    public static string MissingAdbText => OperatingSystem.IsWindows()
+        ? "H.I.B's adb.exe is missing. Reinstall H.I.B with H.I.B-Setup.exe."
+        : "adb isn't installed (brew install android-platform-tools).";
+
     /// <summary>Runs <c>adb &lt;args&gt;</c>.</summary>
     public Task<ProcessResult> RunAsync(IEnumerable<string> args, TimeSpan? timeout = null, CancellationToken ct = default)
     {
+        if (CommandRunner is { } runner) return runner(args.ToList(), ct);
         var adb = AdbPath;
         if (adb is null) return Task.FromResult(new ProcessResult(-1, [], "adb not found", false));
         return ProcessRunner.RunAsync(adb, args, timeout ?? TimeSpan.FromSeconds(30), null, ct);
@@ -236,16 +248,16 @@ public sealed class AdbService : ObservableObject
 
     private static readonly string[] FailureSuggestions =
     [
-        "Pair your device using either the \"Pair with ADB QR\" button or via the command line (adb pair)",
-        "Ensure your Android device has Wireless Debugging enabled",
-        "Reconnect to the exact same Wi-Fi network as your PC",
+        "Open Set up mirroring in H.I.B and pair this PC (a QR code or a 6-digit code)",
+        "Make sure Wireless debugging is on in the phone's Developer options",
+        "Keep the phone and the PC on networks that can reach each other",
     ];
 
     private static readonly (string Match, string Reason)[] FailureReasons =
     [
         ("failed to authenticate", "Your PC isn't authorized to debug this device yet — it needs to be paired again."),
         ("unauthorized", "Your PC isn't authorized to debug this device yet — it needs to be paired again."),
-        ("connection refused", "The device refused the connection. This usually means it hasn't been paired with this PC (via \"adb pair\") since Wireless Debugging was last turned on."),
+        ("connection refused", "The phone refused the connection. This usually means this PC isn't paired with its Wireless debugging yet."),
         ("no route to host", "Your PC can't reach the device on the network — check they're both on the same Wi-Fi."),
         ("network is unreachable", "Your PC can't reach the device on the network — check they're both on the same Wi-Fi."),
         ("timed out", "The connection attempt timed out — check that both devices are on the same Wi-Fi network and Wireless Debugging is still on."),
@@ -310,13 +322,7 @@ public sealed class AdbService : ObservableObject
 
         try
         {
-            var adb = AdbPath;
-            if (adb is null)
-            {
-                return Fail(OperatingSystem.IsWindows()
-                    ? "ADB not found. Put adb.exe in the tools folder or install Android platform-tools."
-                    : "ADB not found. Please install via Homebrew: brew install android-platform-tools");
-            }
+            if (!HasAdb) return Fail(MissingAdbText);
 
             if (killServer || AlwaysKillAdbBeforeConnect)
             {
@@ -427,7 +433,7 @@ public sealed class AdbService : ObservableObject
         if (userInitiated) UserRequestedDisconnect = true;
         var ip = ConnectedIp;
         var port = Port;
-        if (AdbPath != null && !string.IsNullOrEmpty(ip))
+        if (HasAdb && !string.IsNullOrEmpty(ip))
             await RunAsync(["disconnect", $"{ip}:{port}"], TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         IsConnected = false;
         IsConnecting = false;

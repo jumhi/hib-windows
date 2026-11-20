@@ -345,9 +345,9 @@ public partial class HomeViewModel : ViewModelBase
         if (_app.Features is not { } f) return;
         if (f.Adb.IsConnected) { await f.Adb.DisconnectAsync(userInitiated: true); return; }
         if (_app.Core.Link.Device is null) { Problem("Connect your phone first."); return; }
-        // A failed connect shows its own toast (with "Pair with ADB QR"); no silent page switch.
-        var r = await f.AutoConnectAdbAsync(silent: false);
-        if (r is null) Problem("ADB isn't available on this PC.");
+        // Not connected → the "Set up mirroring" card shows what the phone still needs (never a dead end).
+        var r = await f.AutoConnectAdbAsync(silent: false, notify: false);
+        if (r is not { Success: true }) f.Setup.Show(r is null ? null : HIB.Features.Adb.AdbService.Explain(r));
     }
 
     // ---- recent apps / mirroring (MirrorLauncher shows progress and the real reason on failure) ----

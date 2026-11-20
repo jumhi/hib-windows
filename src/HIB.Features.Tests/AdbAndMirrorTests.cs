@@ -40,7 +40,7 @@ public class AdbParsingTests
         Assert.Contains("refused", AdbService.Diagnosis(["1.2.3.4:5555: failed to connect to '1.2.3.4:5555': connection refused"])!);
         var text = AdbService.BuildFailureText(["x: failed to authenticate to x"]);
         Assert.StartsWith("What happened:\nYour PC isn't authorized", text);
-        Assert.Contains("• Pair your device", text);
+        Assert.Contains("• Open Set up mirroring", text);
     }
 
     [Fact]
@@ -367,7 +367,7 @@ public class MirrorDiagnosticsTests
         var refused = new AdbConnectResult(false, null, "10.107.0.205:41234: failed to connect to '10.107.0.205:41234': connection refused",
             AdbService.Diagnosis(["connection refused"]), "x");
         var text = AdbService.Explain(refused);
-        Assert.StartsWith("The device refused the connection", text);
+        Assert.StartsWith("The phone refused the connection", text);
         Assert.Contains("adb said: 10.107.0.205:41234: failed to connect", text);
         Assert.Equal("cannot connect", AdbService.Explain(new AdbConnectResult(false, null, "\ncannot connect\n", null, null)));
         Assert.Equal("", AdbService.Explain(new AdbConnectResult(true, "a:1", "connected to a:1", null, null)));

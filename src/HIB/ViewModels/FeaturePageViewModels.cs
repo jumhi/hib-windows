@@ -90,7 +90,6 @@ public sealed partial class PhoneAppItem : ObservableObject
 
 public partial class PhoneViewModel : ViewModelBase
 {
-    public const string WingetCommand = "winget install Genymobile.scrcpy";
     readonly AppController _app;
     readonly FeatureHost _f;
 
@@ -99,10 +98,6 @@ public partial class PhoneViewModel : ViewModelBase
         _app = app;
         _f = features;
         Adb.PropertyChanged += (_, _) => Ui.Post(Refresh);
-        Pairing.PropertyChanged += (_, e) => Ui.Post(() =>
-        {
-            if (e.PropertyName == nameof(Pairing.QrText)) PairingQr = PairViewModel.RenderQr(Pairing.QrText);
-        });
         Mirror.PropertyChanged += (_, _) => Ui.Post(Refresh);
         app.Core.Hub.AppsChanged += () => Ui.Post(LoadApps);
         app.Core.Link.ConnectionChanged += (_, _) => Ui.Post(Refresh);
@@ -115,13 +110,11 @@ public partial class PhoneViewModel : ViewModelBase
     public AdbPairingService Pairing => _f.Pairing;
     public MirrorService Mirror => _f.Mirror;
     public PhoneAudioBridge Audio => _f.Audio;
-    public string Winget => WingetCommand;
 
     [ObservableProperty] public partial bool ToolsMissing { get; set; }
     [ObservableProperty] public partial string ToolsText { get; set; } = "";
     [ObservableProperty] public partial string AdbStatus { get; set; } = "";
     [ObservableProperty] public partial bool PhoneConnected { get; set; }
-    [ObservableProperty] public partial Bitmap? PairingQr { get; set; }
     [ObservableProperty] public partial bool AutoConnect { get; set; }
     [ObservableProperty] public partial string AppFilter { get; set; } = "";
     [ObservableProperty] public partial string Status { get; set; } = "";
@@ -137,7 +130,8 @@ public partial class PhoneViewModel : ViewModelBase
         var scrcpy = Adb.Locator.ScrcpyPath;
         ToolsMissing = adbPath is null || scrcpy is null;
         ToolsText = ToolsMissing
-            ? $"{(adbPath is null ? "adb" : "")}{(adbPath is null && scrcpy is null ? " and " : "")}{(scrcpy is null ? "scrcpy" : "")} not found. Install scrcpy (it includes adb) and press Check again."
+            ? $"H.I.B's {(adbPath is null ? "adb" : "")}{(adbPath is null && scrcpy is null ? " and " : "")}{(scrcpy is null ? "scrcpy" : "")} "
+              + "should be in its tools folder but isn't. Run H.I.B-Setup.exe again to repair it, then press Check again."
             : $"adb: {adbPath}\nscrcpy: {scrcpy}";
         PhoneConnected = _app.Core.Link.IsConnected;
         AdbStatus = Adb.IsConnecting ? "Connecting…"
@@ -165,32 +159,21 @@ public partial class PhoneViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    async Task CopyWinget()
-    {
-        var cb = _app.MainWindow?.Clipboard;
-        if (cb is not null) await Avalonia.Input.Platform.ClipboardExtensions.SetTextAsync(cb, WingetCommand);
-        Status = "Copied. Paste it into Windows Terminal, then press Check again.";
-    }
-
-    [RelayCommand]
     async Task Connect()
     {
-        if (_app.Core.Link.Device is null) { Status = "Connect the phone to H.I.B first (Pair page)."; return; }
-        var r = await _f.AutoConnectAdbAsync(silent: false, killServer: true);
-        Status = r is null ? "ADB is not available." : r.Success ? "ADB connected." : r.Diagnosis ?? "ADB connection failed.";
+        if (_app.Core.Link.Device is null) { _f.Setup.Show(); return; }
+        Status = "Connecting…";
+        var r = await _f.AutoConnectAdbAsync(silent: false, notify: false);
+        if (r is { Success: true }) { Status = "ADB connected."; return; }
+        // Not a dead end: the setup card shows what the phone still needs (or pairs this PC).
+        Status = r is null ? "" : AdbService.Explain(r);
+        _f.Setup.Show(Status);
     }
 
     [RelayCommand] Task Disconnect() => Adb.DisconnectAsync(userInitiated: true);
 
-    [RelayCommand]
-    async Task StartPairing()
-    {
-        Status = "";
-        var ok = await Pairing.StartPairingAsync();
-        if (ok) await _f.AutoConnectAdbAsync(silent: false);
-    }
-
-    [RelayCommand] void StopPairing() => Pairing.StopPairing();
+    /// <summary>"Set up mirroring": Developer options → Wireless debugging → pair, driven by the phone.</summary>
+    [RelayCommand] void SetUpMirroring() => _f.Setup.Show();
 
     [RelayCommand]
     async Task MirrorScreen()

@@ -42,7 +42,7 @@ App responsibilities that stay in the app:
 - Optionally run a guardian: if ADB is enabled but not connected and `!adb.UserRequestedDisconnect`,
   send `refreshAdbPorts`, then after 1.5 s call `ConnectAsync(..., silent: true)` (PROTOCOL §7.1).
 - Forward phone→PC file transfers whose id is tracked by `PhoneFetchRegistry` (§5).
-- Show UI for `adb.ConnectionFailed` (offer "Pair with ADB QR"), `mirror.MirrorExited`
+- Show UI for `adb.ConnectionFailed` (offer "Set up mirroring"), `mirror.MirrorExited`
   (`NeedsPairing`), `codes.CodeCopied` (HUD), and `agent.AttentionRequested`.
 
 ## 2. `IPhoneLink` (Abstractions/IPhoneLink.cs)
@@ -104,16 +104,24 @@ Otherwise it returns `ip:port` while connected, or null.
 | `LockPhoneAsync()` | Runs `input keyevent KEYCODE_SLEEP` (the Find My lock fallback). |
 | `SendRingBroadcastAsync(start)` | Sends `am broadcast -a com.sameerasw.airsync.(STOP_)RING_PHONE -n …/.service.RingCommandReceiver`. |
 
-### AdbPairingService ("Pair with ADB QR")
-`StartPairingAsync()` creates `adb-wireless-<6 digits>` and an 8-digit password. It exposes
-`QrText = WIFI:T:ADB;S:<name>;P:<pw>;;` immediately; render that string as a QR code.
+### AdbPairingService and AdbSetupSession ("Set up mirroring", docs/SPACE.md §8)
+The phone reports its own ADB setup in `adbSetupState` (Developer options, Wireless debugging,
+`connectPort`, and `pairingPort`/`pairingName` while a pairing screen is open). `PhoneHub` parses it
+per link (`AdbSetup`, `AdbSetupChanged`); `FeatureHost` passes it to `AdbPairingService.UpdateSetupState`
+and sets `PhoneIp`. `PhoneHub.RequestAdbSetupAsync(open, watch)` sends `adbSetupRequest`.
 
-The Mac browses Bonjour. This port polls `adb mdns services` instead, so Windows does not need
-Bonjour. When `_adb-tls-pairing._tcp` appears under our name, it runs `adb pair`. It retries up to
-3 times with `kill-server` on protocol or daemon faults. It then finds the phone's
-`_adb-tls-connect._tcp` port and runs `adb connect`, again with up to 3 retries.
-
-Bind `Status` and `IsPairing`. Call `StopPairing()` to cancel.
+- **QR:** `StartPairingAsync()` creates `adb-wireless-<6 digits>` + an 8-digit password and exposes
+  `QrText = WIFI:T:ADB;S:<name>;P:<pw>;;` at once. When `adbSetupState.pairingName` matches the name it
+  runs `adb pair <phoneIp>:<pairingPort> <pw>` immediately (no mDNS), then `adb connect <phoneIp>:<connectPort>`.
+- **Pairing code:** `PairWithCodeAsync("123456")` takes the port from `pairingPort`; the user only types
+  the 6 digits.
+- `adb mdns services` is only used when the phone never sent `adbSetupState` (older phone app).
+- `AdbSetupFlow.StepFor(...)` decides the card's step; `AdbSetupFlow.PortsToTry` makes every connect use
+  `connectPort` over stale `adbPorts` (and no mDNS while the phone says Wireless debugging is off).
+- `AdbSetupSession` drives the card: `watch` while open, connect as soon as Wireless debugging is on,
+  the QR when that says "not paired", pair the moment the phone reports our QR, connect after pairing.
+- Retries `adb pair`/`adb connect` up to 3 times with `kill-server` on protocol or daemon faults. The
+  pairing code is never written to the ADB console or the log.
 
 ### AppOpsGranter
 `Start()`: 2 s after every ADB connect, runs

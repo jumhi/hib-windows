@@ -71,7 +71,7 @@ public sealed class MirrorSession
 }
 
 /// <summary>scrcpy exited. <see cref="IsProblem"/> → show <see cref="Title"/> + <see cref="Reason"/>;
-/// when <see cref="NeedsPairing"/>, offer "Pair with ADB QR".</summary>
+/// when <see cref="NeedsPairing"/>, offer "Set up mirroring".</summary>
 public sealed record MirrorExit(MirrorSession Session, int ExitCode, string Output, bool NeedsPairing)
 {
     public bool IsProblem { get; init; }
@@ -114,7 +114,7 @@ public sealed class MirrorService : ObservableObject, IDisposable
     public IReadOnlyList<MirrorSession> Sessions { get { lock (_sessions) return _sessions.ToList(); } }
     public bool IsMirroring => Sessions.Any(s => s.IsRunning);
 
-    /// <summary>scrcpy exited. When <see cref="MirrorExit.NeedsPairing"/>, offer "Pair with ADB QR".</summary>
+    /// <summary>scrcpy exited. When <see cref="MirrorExit.NeedsPairing"/>, offer "Set up mirroring".</summary>
     public event Action<MirrorExit>? MirrorExited;
     /// <summary>The scrcpy window is on screen.</summary>
     public event Action<MirrorSession>? MirrorWindowOpened;

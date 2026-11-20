@@ -1,0 +1,202 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:HIB.ViewModels"
+        xmlns:c="using:HIB.Views.Controls"
+        x:Class="HIB.Views.AdbSetupWindow"
+        x:DataType="vm:AdbSetupViewModel"
+        Title="Set up mirroring"
+        Width="560" SizeToContent="Height" CanResize="False"
+        Background="{StaticResource HibInk}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="36"
+        WindowStartupLocation="CenterScreen">
+
+  <!-- docs/SPACE.md §8.3 in the Mac H.I.B look: ink/midnight ambient, glass panel, cyan for "now", lime for "done". -->
+  <Window.Resources>
+    <!-- one step in the rail: lime tick when done, cyan ring when current, faint number when pending -->
+    <DataTemplate x:Key="StepPill" x:DataType="vm:AdbSetupStepItem">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Panel Width="24" Height="24" VerticalAlignment="Center">
+          <Border CornerRadius="12" Background="{StaticResource HibLimeSoft}" BorderBrush="#8CBAFF38" BorderThickness="1"
+                  BoxShadow="0 0 10 0 #4DBAFF38" IsVisible="{Binding IsDone}">
+            <c:Icon Data="{x:Static vm:Icons.Check}" Size="13" StrokeThickness="2.8" Foreground="{StaticResource HibLime}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border CornerRadius="12" Background="{StaticResource HibCyanSoft}" BorderBrush="{StaticResource HibCyan}" BorderThickness="1.2"
+                  BoxShadow="0 0 12 0 #6620D9FF" IsVisible="{Binding IsCurrent}">
+            <TextBlock Text="{Binding Number}" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource HibCyan}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Border CornerRadius="12" BorderBrush="#33FFFFFF" BorderThickness="1" IsVisible="{Binding IsPending}">
+            <TextBlock Text="{Binding Number}" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource HibFaint}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+        </Panel>
+        <TextBlock Text="{Binding Title}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"
+                   Foreground="{StaticResource HibText}" Opacity="{Binding IsPending, Converter={x:Static vm:AdbSetupConverters.PendingOpacity}}"/>
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Panel>
+    <c:AmbientBackground/>
+    <Border x:Name="TitleStrip" Height="36" VerticalAlignment="Top" Background="Transparent"/>
+
+    <StackPanel Margin="28,46,28,24" Spacing="18">
+      <!-- header -->
+      <Grid ColumnDefinitions="Auto,*">
+        <Border Classes="tile" BoxShadow="0 10 30 0 #3320D9FF">
+          <c:Icon Data="{x:Static vm:Icons.Cast}"/>
+        </Border>
+        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Spacing="4">
+          <TextBlock Text="SET UP MIRRORING" Classes="label"/>
+          <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Grid>
+
+      <!-- the three steps, ticking as the phone reports progress -->
+      <Border Classes="glass" CornerRadius="999" Padding="14,9" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <ContentControl Content="{Binding DeveloperItem}" ContentTemplate="{StaticResource StepPill}"/>
+          <Border Width="18" Height="1" Background="#33FFFFFF" VerticalAlignment="Center"/>
+          <ContentControl Content="{Binding WirelessItem}" ContentTemplate="{StaticResource StepPill}"/>
+          <Border Width="18" Height="1" Background="#33FFFFFF" VerticalAlignment="Center"/>
+          <ContentControl Content="{Binding PairItem}" ContentTemplate="{StaticResource StepPill}"/>
+        </StackPanel>
+      </Border>
+
+      <!-- the current step -->
+      <Border Classes="panel glow" Padding="22,20">
+        <StackPanel Spacing="16">
+          <TextBlock Text="{Binding Subtitle}" FontSize="14" TextWrapping="Wrap" Foreground="{StaticResource HibText}" Opacity="0.86"
+                     IsVisible="{Binding !IsReady}"/>
+
+          <!-- Developer options -->
+          <StackPanel Spacing="12" IsVisible="{Binding IsDeveloperStep}">
+            <Button Classes="primary" HorizontalAlignment="Left" Command="{Binding ShowDeveloperOptionsCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="15" StrokeThickness="2.2"/>
+                <TextBlock Text="Show me on the phone" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+          </StackPanel>
+
+          <!-- Wireless debugging -->
+          <StackPanel Spacing="12" IsVisible="{Binding IsWirelessStep}">
+            <Button Classes="primary" HorizontalAlignment="Left" Command="{Binding OpenWirelessDebuggingCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <c:Icon Data="{x:Static vm:Icons.Wifi}" Size="15" StrokeThickness="2.2"/>
+                <TextBlock Text="Open it on the phone" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Data="{x:Static vm:Icons.ShieldCheck}" Classes="cyan" Size="15" Margin="0,1,9,0" VerticalAlignment="Top"/>
+              <TextBlock Grid.Column="1" Classes="caption" TextWrapping="Wrap"
+                         Text="If your phone asks, tap Allow on this network."/>
+            </Grid>
+          </StackPanel>
+
+          <!-- Pair: QR -->
+          <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsQrStep}">
+            <Border Background="Black" CornerRadius="26" Padding="14" BoxShadow="0 10 30 0 #59000000" VerticalAlignment="Top">
+              <Border Background="White" CornerRadius="12" Padding="8">
+                <Image Source="{Binding QrImage}" Width="188" Height="188" RenderOptions.BitmapInterpolationMode="None"/>
+              </Border>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="20,4,0,0" Spacing="12" VerticalAlignment="Center">
+              <StackPanel Spacing="7">
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Text="1" Classes="label" FontSize="12" Width="16" Margin="0,1,6,0"/>
+                  <TextBlock Grid.Column="1" Text="Wireless debugging" TextWrapping="Wrap"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Text="2" Classes="label" FontSize="12" Width="16" Margin="0,1,6,0"/>
+                  <TextBlock Grid.Column="1" Text="Pair device with QR code" TextWrapping="Wrap"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Text="3" Classes="label" FontSize="12" Width="16" Margin="0,1,6,0"/>
+                  <TextBlock Grid.Column="1" Text="Scan this code" TextWrapping="Wrap"/>
+                </Grid>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <c:Icon Classes="spin cyan" Data="{x:Static vm:Icons.LoaderCircle}" Size="14"/>
+                <TextBlock Text="Waiting for your phone…" Classes="caption" VerticalAlignment="Center"/>
+              </StackPanel>
+              <Button Classes="link" HorizontalAlignment="Left" Margin="-4,0,0,0" Content="Use a pairing code instead"
+                      Command="{Binding UseCodeCommand}"/>
+            </StackPanel>
+          </Grid>
+
+          <!-- Pair: 6-digit code -->
+          <StackPanel Spacing="14" IsVisible="{Binding IsCodeStep}">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox Text="{Binding Code}" MaxLength="6" PlaceholderText="000000" FontSize="30" FontWeight="SemiBold"
+                       LetterSpacing="10" TextAlignment="Center" Height="62" Padding="14,8"
+                       FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                       Background="{StaticResource HibFieldFill}" BorderBrush="#4D20D9FF"/>
+              <Button Grid.Column="1" Classes="primary" Margin="12,0,0,0" VerticalAlignment="Center" Padding="22,10"
+                      Content="Pair" Command="{Binding SubmitCodeCommand}" IsEnabled="{Binding CanSubmitCode}"/>
+            </Grid>
+            <Border Classes="chip lime" HorizontalAlignment="Left" IsVisible="{Binding PhoneShowsCode}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{x:Static vm:Icons.CircleCheck}" Size="13" Foreground="{StaticResource HibLime}"/>
+                <TextBlock Text="Your phone is showing a pairing code"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="chip" HorizontalAlignment="Left" IsVisible="{Binding !PhoneShowsCode}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Classes="spin cyan" Data="{x:Static vm:Icons.LoaderCircle}" Size="12"/>
+                <TextBlock Text="Waiting for Pair device with pairing code on your phone"/>
+              </StackPanel>
+            </Border>
+            <Button Classes="link" HorizontalAlignment="Left" Margin="-4,0,0,0" Content="Use the QR code instead"
+                    Command="{Binding UseQrCommand}"/>
+          </StackPanel>
+
+          <!-- checking / connecting -->
+          <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsWorking}">
+            <c:Icon Classes="spin cyan" Data="{x:Static vm:Icons.LoaderCircle}" Size="18"/>
+            <TextBlock Text="{Binding PhoneName}" VerticalAlignment="Center" FontWeight="Medium"/>
+          </StackPanel>
+
+          <!-- phone not linked -->
+          <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsPhoneStep}">
+            <c:Icon Data="{x:Static vm:Icons.Smartphone}" Classes="muted" Size="18"/>
+            <TextBlock Text="H.I.B will continue as soon as your phone connects." Classes="caption" VerticalAlignment="Center" TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <!-- ready -->
+          <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsReady}">
+            <Border Width="52" Height="52" CornerRadius="26" Background="{StaticResource HibLimeSoft}" BorderBrush="#8CBAFF38"
+                    BorderThickness="1" BoxShadow="0 0 22 0 #4DBAFF38" Margin="0,0,16,0" VerticalAlignment="Top">
+              <c:Icon Data="{x:Static vm:Icons.Check}" Size="24" StrokeThickness="2.8" Foreground="{StaticResource HibLime}"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="14" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Subtitle}" FontSize="14" TextWrapping="Wrap"/>
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button Classes="primary" Padding="18,9" Command="{Binding GoCommand}">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="15" StrokeThickness="2.2"/>
+                    <TextBlock Text="{Binding ReadyButtonText}" VerticalAlignment="Center"/>
+                  </StackPanel>
+                </Button>
+                <Button Content="Close" Command="{Binding DismissCommand}"/>
+              </StackPanel>
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- footer: progress / the real reason, and Close -->
+      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsReady}">
+        <StackPanel VerticalAlignment="Center" Spacing="4" Margin="4,0,12,0">
+          <TextBlock Text="{Binding Status}" Classes="caption" Foreground="{StaticResource HibCyan}" TextWrapping="Wrap"
+                     IsVisible="{Binding HasStatus}"/>
+          <TextBlock Text="{Binding Note}" Classes="faint" TextWrapping="Wrap" IsVisible="{Binding HasNote}"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="Close" Command="{Binding DismissCommand}" VerticalAlignment="Top"/>
+      </Grid>
+    </StackPanel>
+  </Panel>
+</Window>

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HIB.Features.Tests" />
+    <InternalsVisibleTo Include="HIB.FakePhone" />
   </ItemGroup>
 
 </Project>

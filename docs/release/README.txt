@@ -22,10 +22,17 @@ Then
 4. On your phone, open H.I.B, tap scan and scan the QR code on the Pair page.
    The phone and the PC must be on the same Wi-Fi (or Tailscale).
 
-Phone mirroring, apps in windows, phone audio and Phone Agent use adb + scrcpy 5.0.1,
-which are included in the "tools" folder (official scrcpy release, Apache 2.0 licence -
-see tools\LICENSE.txt). On the phone, turn on Developer options > Wireless debugging,
-then use the Phone page > "Pair with ADB QR" once.
+Phone mirroring (optional)
+Click Mirror. The "Set up mirroring" card walks you through it once - no terminal, nothing
+to install, it ticks each step as your phone reports it:
+  1. Developer options: "Show me on the phone", then tap Build number 7 times.
+  2. Wireless debugging: "Open it on the phone" and switch it on (tap Allow if asked).
+  3. Pair this PC: on the phone, Wireless debugging > Pair device with QR code, and scan
+     the code on the PC - or "Use a pairing code instead" and type the 6 digits.
+  4. "Mirroring is ready" - click Mirror.
+Mirroring, apps in windows, phone audio and Phone Agent use the adb + scrcpy 5.0.1 in the
+"tools" folder (official scrcpy release, Apache 2.0 licence - see tools\LICENSE.txt).
+H.I.B always uses these; you never need platform-tools or PATH changes.
 
 Tips
 - Settings > "Start with Windows" keeps H.I.B in the tray after login.

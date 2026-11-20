@@ -37,6 +37,8 @@ public sealed class PhoneHub
             if (connected) return;
             NowPlaying = null;
             NowPlayingChanged?.Invoke(null);
+            // adbSetupState belongs to this phone link (SPACE.md §8.1): the next phone sends its own.
+            if (AdbSetup is not null) { AdbSetup = null; AdbSetupChanged?.Invoke(null); }
             if (IsRinging) { IsRinging = false; RingStateChanged?.Invoke(false); }
         };
     }
@@ -47,6 +49,9 @@ public sealed class PhoneHub
     public NowPlaying? NowPlaying { get; private set; }
     public CallInfo? CurrentCall { get; private set; }
     public bool IsRinging { get; private set; }
+    /// <summary>The phone's own ADB setup (SPACE.md §8.1 <c>adbSetupState</c>) on the current link; null until it
+    /// reports (an older phone app never does).</summary>
+    public HIB.Features.Adb.AdbSetupState? AdbSetup { get; private set; }
     public IReadOnlyCollection<PhoneNotification> Notifications => _notifications.Values.OrderByDescending(n => n.Received).ToList();
     public IReadOnlyDictionary<string, PhoneApp> Apps => _apps;
 
@@ -61,6 +66,7 @@ public sealed class PhoneHub
     public event Action<bool>? RingStateChanged;
     public event Action<FlickInfo>? FlickStarted;
     public event Action? AppsChanged;
+    public event Action<HIB.Features.Adb.AdbSetupState?>? AdbSetupChanged;
     public event Action<string>? Log;
 
     void OnMessage(object? sender, LinkMessageEventArgs e)
@@ -118,8 +124,25 @@ public sealed class PhoneHub
             case "appIcons":
                 HandleAppIcons(d);
                 break;
+
+            case "adbSetupState":
+                if (HIB.Features.Adb.AdbSetupState.Parse(d) is { } adbSetup)
+                {
+                    AdbSetup = adbSetup;
+                    Log?.Invoke($"ADB setup on the phone: developer options {(adbSetup.DeveloperOptions ? "on" : "off")}, wireless debugging "
+                                + $"{(adbSetup.WirelessDebugging ? "on" : "off")}, port {adbSetup.ConnectPort?.ToString() ?? "-"}, pairing {adbSetup.PairingPort?.ToString() ?? "-"}");
+                    AdbSetupChanged?.Invoke(adbSetup);
+                }
+                break;
         }
     }
+
+    /// <summary>
+    /// SPACE.md §8.2: <paramref name="open"/> "developer" / "wireless" opens that screen on the phone; <paramref name="watch"/>
+    /// keeps the phone reporting <c>adbSetupState</c> within ~1 s for 5 minutes (false stops it).
+    /// </summary>
+    public Task<bool> RequestAdbSetupAsync(string? open, bool watch)
+        => _link.SendAsync("adbSetupRequest", new Dictionary<string, object?> { ["open"] = open, ["watch"] = watch });
 
     void HandleStatus(JsonElement d)
     {

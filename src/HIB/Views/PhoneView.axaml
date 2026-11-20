@@ -14,16 +14,10 @@
         <StackPanel Spacing="8">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <c:Icon Data="{x:Static vm:Icons.TriangleAlert}" Foreground="{StaticResource HibWarning}"/>
-            <TextBlock Text="scrcpy and adb are needed" FontWeight="SemiBold" Foreground="{StaticResource HibWarning}"/>
+            <TextBlock Text="Mirroring tools are missing" FontWeight="SemiBold" Foreground="{StaticResource HibWarning}"/>
           </StackPanel>
           <TextBlock Text="{Binding ToolsText}" Classes="caption" TextWrapping="Wrap"/>
-          <Grid ColumnDefinitions="*,Auto,Auto">
-            <Border Background="{StaticResource HibFieldFill}" CornerRadius="10" Padding="12,8">
-              <SelectableTextBlock Text="{Binding Winget}" Classes="mono"/>
-            </Border>
-            <Button Grid.Column="1" Classes="primary" Content="Copy" Margin="8,0,0,0" Command="{Binding CopyWingetCommand}"/>
-            <Button Grid.Column="2" Content="Check again" Margin="8,0,0,0" Command="{Binding CheckToolsCommand}"/>
-          </Grid>
+          <Button Content="Check again" HorizontalAlignment="Left" Command="{Binding CheckToolsCommand}"/>
         </StackPanel>
       </Border>
 
@@ -55,29 +49,14 @@
             <TextBlock Grid.Column="1" Text="Connect ADB by itself when the phone connects" VerticalAlignment="Center" TextWrapping="Wrap"/>
             <ToggleSwitch Grid.Column="2" IsChecked="{Binding AutoConnect}"/>
           </Grid>
-          <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !Pairing.IsPairing}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
             <c:Icon Data="{x:Static vm:Icons.QrCode}" Classes="muted" Margin="0,0,10,0"/>
             <StackPanel Grid.Column="1">
-              <TextBlock Text="First time? Pair ADB once"/>
-              <TextBlock Text="Developer options › Wireless debugging › Pair device with QR code." Classes="faint" TextWrapping="Wrap"/>
+              <TextBlock Text="First time on this PC?"/>
+              <TextBlock Text="H.I.B walks you through it on your phone: no terminal, nothing to install." Classes="faint" TextWrapping="Wrap"/>
             </StackPanel>
-            <Button Grid.Column="2" Content="Pair with ADB QR" Command="{Binding StartPairingCommand}" VerticalAlignment="Center"/>
+            <Button Grid.Column="2" Classes="primary" Content="Set up mirroring" Command="{Binding SetUpMirroringCommand}" VerticalAlignment="Center"/>
           </Grid>
-          <!-- pairing QR -->
-          <Border Classes="glass" CornerRadius="16" Padding="14" IsVisible="{Binding Pairing.IsPairing}">
-            <Grid ColumnDefinitions="Auto,*">
-              <Border Background="White" CornerRadius="14" Padding="10" Margin="0,0,18,0">
-                <Image Source="{Binding PairingQr}" Width="180" Height="180" RenderOptions.BitmapInterpolationMode="None"/>
-              </Border>
-              <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
-                <TextBlock Text="Pair with ADB QR" Classes="headline"/>
-                <TextBlock Classes="caption" TextWrapping="Wrap"
-                           Text="On the phone: Settings › Developer options › Wireless debugging › Pair device with QR code, then scan this code."/>
-                <TextBlock Text="{Binding Pairing.Status}" TextWrapping="Wrap"/>
-                <Button Content="Cancel" Command="{Binding StopPairingCommand}" HorizontalAlignment="Left"/>
-              </StackPanel>
-            </Grid>
-          </Border>
         </StackPanel>
       </Border>
 
@@ -92,13 +71,13 @@
             </StackPanel>
           </Grid>
           <WrapPanel>
-            <Button Classes="primary" Margin="0,0,8,0" Command="{Binding MirrorScreenCommand}" IsEnabled="{Binding Adb.IsConnected}">
+            <Button Classes="primary" Margin="0,0,8,0" Command="{Binding MirrorScreenCommand}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:Icon Data="{x:Static vm:Icons.Smartphone}" Size="14" StrokeThickness="2.2"/>
                 <TextBlock Text="Mirror" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
-            <Button Margin="0,0,8,0" Command="{Binding DesktopModeCommand}" IsEnabled="{Binding Adb.IsConnected}">
+            <Button Margin="0,0,8,0" Command="{Binding DesktopModeCommand}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:Icon Data="{x:Static vm:Icons.Monitor}" Size="14"/>
                 <TextBlock Text="Desktop" VerticalAlignment="Center"/>

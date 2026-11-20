@@ -163,12 +163,25 @@ public sealed class FeatureHost : IDisposable
         {
             if (e.Type == "device") _ = AutoConnectAdbAsync(silent: true);
         };
+        // SPACE.md §8: the phone reports its own ADB setup (ports, pairing service). Pairing and the setup card use it.
+        core.Link.DeviceUpdated += (_, d) => Pairing.PhoneIp = PhoneAdbIp(d);
+        if (core.Link.Device is { } known) Pairing.PhoneIp = PhoneAdbIp(known);
+        core.Hub.AdbSetupChanged += state =>
+        {
+            if (core.Link.Device is { } dev) Pairing.PhoneIp = PhoneAdbIp(dev);
+            Pairing.UpdateSetupState(state);
+            // Wireless debugging just came on (or moved): connect quietly, like after a device message.
+            if (state is { WirelessDebugging: true, ConnectPort: not null } && !Adb.IsConnected && !Adb.IsConnecting && !Pairing.IsBusy)
+                _ = AutoConnectAdbAsync(silent: true);
+        };
         core.Link.ConnectionChanged += (_, connected) =>
         {
             if (!connected && Adb.IsConnected) _ = Adb.DisconnectAsync();
             if (connected) _ = Scenes.PublishScenesAsync(Array.Empty<PhoneSceneInfo>());
         };
 
+        // The "Set up mirroring" card (SPACE.md §8.3).
+        Setup = new AdbSetupPresenter(app, this);
         Adb.ConnectionFailed += r => Ui.Post(() =>
         {
             var vm = new ToastViewModel
@@ -179,10 +192,10 @@ public sealed class FeatureHost : IDisposable
                 Icon = ImageUtil.AppIcon(),
                 Seconds = 12,
             };
-            vm.Buttons.Add(new ToastButton("Pair with ADB QR", () => { app.ShowMainWindow("phone"); vm.Close(); }, "primary"));
+            vm.Buttons.Add(new ToastButton("Set up mirroring", () => { Setup.Show(); vm.Close(); }, "primary"));
             app.Toasts.Show(vm);
         });
-        // Mirroring start/slow/exit toasts with the real reason (MirrorLauncher).
+        // Mirror/Desktop/app launcher: progress, real reasons, and the setup card when ADB isn't ready.
         Launcher = new MirrorLauncher(app, this);
         Codes.CodeCopied += (code, source) => Ui.Post(() => app.Toasts.Show(new ToastViewModel
         {
@@ -230,6 +243,8 @@ public sealed class FeatureHost : IDisposable
     public LoginCodeAutoCopier Codes { get; }
     /// <summary>Starts mirror / desktop / app windows with visible progress and real failure reasons.</summary>
     public MirrorLauncher Launcher { get; }
+    /// <summary>"Set up mirroring": Developer options → Wireless debugging → pair → ready, no terminal.</summary>
+    public AdbSetupPresenter Setup { get; }
 
     public bool AdbAutoConnect
     {
@@ -246,11 +261,25 @@ public sealed class FeatureHost : IDisposable
     public async Task<AdbConnectResult?> AutoConnectAdbAsync(bool silent, bool killServer = false, bool? notify = null)
     {
         var d = _core.Link.Device;
-        if (d is null || Adb.AdbPath is null) return null;
+        if (d is null || !Adb.HasAdb) return null;
         if (silent && (!AdbAutoConnect || Adb.IsConnected || Adb.UserRequestedDisconnect)) return null;
         var ip = PhoneAdbIp(d);
-        return await Adb.ConnectAsync(ip, d.AdbPorts, killServer, silent, notify: notify);
+        // SPACE.md §8: the phone's own connectPort beats the device message's adbPorts; and when the phone
+        // reports its setup, never fall back to mDNS (it can't cross subnets).
+        var setup = _core.Hub.AdbSetup;
+        var ports = AdbSetupFlow.PortsToTry(setup, d.AdbPorts);
+        if (setup is not null && ports.Count == 0)
+        {
+            var why = !setup.DeveloperOptions ? "Developer options are off on the phone."
+                : !setup.WirelessDebugging ? "Wireless debugging is off on the phone."
+                : "The phone hasn't reported its Wireless debugging port yet.";
+            return new AdbConnectResult(false, null, why, why, why);
+        }
+        return await Adb.ConnectAsync(ip, ports, killServer, silent, notify: notify);
     }
+
+    /// <summary>The phone's address for adb, when a phone is known.</summary>
+    public string? PhoneIp => _core.Link.Device is { } d ? PhoneAdbIp(d) : null;
 
     /// <summary>The phone's own LAN address (what adbd listens on), else where its link came from.</summary>
     static string PhoneAdbIp(PhoneDeviceInfo d)

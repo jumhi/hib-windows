@@ -76,9 +76,18 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
         {
             Progress($"Starting {what}…", _f.Adb.IsConnected ? "Opening the phone screen…" : $"Connecting to {phone} over ADB…");
             var adbProblem = await EnsureAdbAsync();
-            if (adbProblem is not null)
+            if (adbProblem is { } p)
             {
-                Problem("Couldn't connect to the phone over ADB", adbProblem.Value.Reason, adbButton: true, pairButton: adbProblem.Value.Pairing);
+                if (!p.Setup)
+                {
+                    Problem("Couldn't connect to the phone over ADB", p.Reason);
+                    return null;
+                }
+                // Not a dead end: the "Set up mirroring" card takes it from here and offers this same action when ready.
+                LastProblem = p.Reason;
+                HibFeatures.Log?.Invoke($"[mirror] ADB isn't ready ({p.Reason}); opening Set up mirroring");
+                CloseCard();
+                _f.Setup.Show(p.Reason, request);
                 return null;
             }
 
@@ -86,7 +95,14 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
             var session = await _f.Mirror.StartAsync(request);
             if (session is null)
             {
-                Problem($"Couldn't start {what}", _f.Mirror.LastError ?? "scrcpy didn't start.", adbButton: !_f.Adb.IsConnected);
+                if (!_f.Adb.IsConnected && _f.Adb.HasAdb)
+                {
+                    CloseCard();
+                    LastProblem = _f.Mirror.LastError ?? "ADB isn't connected.";
+                    _f.Setup.Show(LastProblem, request);
+                    return null;
+                }
+                Problem($"Couldn't start {what}", _f.Mirror.LastError ?? "scrcpy didn't start.");
                 return null;
             }
             _waitingFor = session.Id;
@@ -105,14 +121,16 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
         }
     }
 
-    /// <summary>Null when ADB is ready; otherwise the real reason it isn't.</summary>
-    async Task<(string Reason, bool Pairing)?> EnsureAdbAsync()
+    /// <summary>Null when ADB is ready; otherwise the real reason it isn't, and whether the setup card can fix it
+    /// (everything except a missing adb.exe).</summary>
+    async Task<(string Reason, bool Setup)?> EnsureAdbAsync()
     {
         var adb = _f.Adb;
-        if (adb.AdbPath is null)
-            return (OperatingSystem.IsWindows()
-                ? "H.I.B couldn't find adb.exe. Reinstall H.I.B (adb ships in its tools folder)."
-                : "adb isn't installed (brew install android-platform-tools).", false);
+        if (!adb.HasAdb) return (AdbService.MissingAdbText, false);
+
+        // The phone says what's missing (SPACE.md §8.1): go straight to the card, no connect attempts.
+        if (!adb.IsConnected && _f.Pairing.SetupState is { } setup && (!setup.DeveloperOptions || !setup.WirelessDebugging))
+            return (!setup.DeveloperOptions ? "Developer options are off on the phone." : "Wireless debugging is off on the phone.", true);
 
         // "Connected" may be stale: Wireless debugging gets a new port each time it restarts.
         var stale = false;
@@ -125,7 +143,7 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
         if (adb.WiredAdbEnabled && await adb.ResolveWiredSerialAsync() is not null) return null;
 
         var link = _app.Core.Link;
-        if (link.Device is null) return ("Connect your phone to H.I.B first (it tells H.I.B its Wireless debugging port).", false);
+        if (link.Device is null) return ("Connect your phone to H.I.B first.", true);
 
         // H.I.B connects ADB by itself after every phone update; wait for that instead of failing as "busy".
         await WaitWhileConnectingAsync();
@@ -144,7 +162,7 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var r = await _f.AutoConnectAdbAsync(silent: false, notify: false);
-            if (r is null) return ("ADB isn't available on this PC.", false);
+            if (r is null) return ("Connect your phone to H.I.B first.", true);
             if (r.Success || adb.IsConnected) return null;
             if (r.Output == AdbService.BusyOutput)
             {
@@ -160,13 +178,9 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
                 if (adb.IsConnected) return null;
                 continue;
             }
-            var reason = AdbService.Explain(r);
-            var pairing = reason.Contains("authorized", StringComparison.OrdinalIgnoreCase)
-                          || reason.Contains("paired", StringComparison.OrdinalIgnoreCase)
-                          || reason.Contains("refused", StringComparison.OrdinalIgnoreCase);
-            return (reason, pairing);
+            return (AdbService.Explain(r), true);
         }
-        return adb.IsConnected ? null : ("ADB is still busy connecting to the phone. Try again in a moment.", false);
+        return adb.IsConnected ? null : ("ADB is still busy connecting to the phone.", true);
     }
 
     /// <summary>Asks the phone to re-send its ADB ports and waits (≤ 3 s) for the updated device message.</summary>
@@ -210,7 +224,15 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
             if (_waitingFor == e.Session.Id) CloseCard();
             return;
         }
-        Problem(e.Title, e.Reason, pairButton: e.NeedsPairing);
+        if (e.NeedsPairing && !e.Session.WindowShown)
+        {
+            // adb says this PC isn't paired: the setup card pairs it, then offers the same window again.
+            CloseCard();
+            LastProblem = e.Reason;
+            _f.Setup.Show(e.Reason, e.Session.Request);
+            return;
+        }
+        Problem(e.Title, e.Reason, setupButton: e.NeedsPairing);
     }
 
     // ---------------- the status card ----------------
@@ -227,13 +249,12 @@ public sealed partial class MirrorLauncher : CommunityToolkit.Mvvm.ComponentMode
         Show(NewCard(title, body, seconds: 30));
     }
 
-    void Problem(string title, string reason, bool adbButton = false, bool pairButton = false)
+    void Problem(string title, string reason, bool setupButton = false)
     {
         LastProblem = reason;
         HibFeatures.Log?.Invoke($"[mirror] {title}: {reason}");
         var vm = NewCard(title, reason, seconds: 20);
-        if (pairButton) vm.Buttons.Add(new ToastButton("Pair with ADB QR", () => { _app.ShowMainWindow("phone"); vm.Close(); }, "primary"));
-        else if (adbButton) vm.Buttons.Add(new ToastButton("ADB settings", () => { _app.ShowMainWindow("phone"); vm.Close(); }, "primary"));
+        if (setupButton) vm.Buttons.Add(new ToastButton("Set up mirroring", () => { _f.Setup.Show(reason); vm.Close(); }, "primary"));
         if (HibLog.Current is { } log)
             vm.Buttons.Add(new ToastButton("Show log", () => { PlatformShell.RevealInFolder(log.FilePath); vm.Close(); }));
         Show(vm);
