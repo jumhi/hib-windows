@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Assets/hib.ico</ApplicationIcon>
+    <AssemblyName>HIB</AssemblyName>
+    <RootNamespace>HIB</RootNamespace>
+    <Product>H.I.B</Product>
+    <Company>Haitham Hamid</Company>
+    <Authors>Haitham Hamid</Authors>
+    <Copyright>Made by Haitham Hamid</Copyright>
+    <Version>4.1.0</Version>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Single-file publish: extract native libs (Skia/HarfBuzz) next to the exe at first run. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HIB.FakePhone" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HIB.Features\HIB.Features.csproj" />
+  </ItemGroup>
+
+  <!-- Windows tools (adb.exe, scrcpy.exe + DLLs) placed in <repo>/tools/win-x64 are copied to
+       <publish>/tools next to HIB.exe (never embedded in the single file). AdbLocator looks there first. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' And Exists('..\..\tools\win-x64')">
+    <None Include="..\..\tools\win-x64\**\*" Link="tools\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="QRCoder" Version="1.9.0" />
+  </ItemGroup>
+
+  <!-- Keep the publish folder to the exe (+ tools): no managed or native .pdb files. -->
+  <Target Name="HibDropPdbsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             x:Class="HIB.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,28" Spacing="16" MaxWidth="900">
+      <TextBlock Text="Home" Classes="h1"/>
+
+      <!-- Device card -->
+      <Border Classes="hero">
+        <Grid ColumnDefinitions="Auto,*">
+          <Border Width="96" Height="170" CornerRadius="16" ClipToBounds="True" Background="#120F19"
+                  BorderBrush="#3A2F55" BorderThickness="1" Margin="0,0,22,0">
+            <Panel>
+              <Image Source="{Binding Wallpaper}" Stretch="UniformToFill" IsVisible="{Binding HasWallpaper}"/>
+              <PathIcon Data="M17,19H7V5H17M17,1H7C5.89,1 5,1.89 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3C19,1.89 18.1,1 17,1Z"
+                        Width="34" Height="34" Foreground="{StaticResource HibMuted}" IsVisible="{Binding !HasWallpaper}"/>
+            </Panel>
+          </Border>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Border Classes="pill" IsVisible="{Binding IsConnected}">
+                <TextBlock Text="Connected" FontSize="12" Foreground="{StaticResource HibGood}"/>
+              </Border>
+              <Border Classes="pill" IsVisible="{Binding !IsConnected}">
+                <TextBlock Text="Not connected" FontSize="12" Foreground="{StaticResource HibMuted}"/>
+              </Border>
+              <Border Classes="pill">
+                <TextBlock Text="PLUS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource HibAccentBrush}"/>
+              </Border>
+            </StackPanel>
+            <TextBlock Text="{Binding DeviceName}" FontSize="28" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+            <TextBlock Text="{Binding DeviceDetail}" Classes="muted"/>
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0" IsVisible="{Binding HasBattery}">
+              <ProgressBar Value="{Binding Battery}" Maximum="100" Width="160" Height="8" CornerRadius="4" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding BatteryText}" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Text="{Binding HintText}" Classes="muted" TextWrapping="Wrap" Margin="0,4,0,0"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Quick actions -->
+      <TextBlock Text="QUICK ACTIONS" Classes="section"/>
+      <WrapPanel>
+        <Button Classes="accent" Margin="0,0,10,10" Command="{Binding RingCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Width="15" Height="15" Data="M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M14,21A2,2 0 0,1 12,23A2,2 0 0,1 10,21" Foreground="{StaticResource HibOnAccent}"/>
+            <TextBlock Text="{Binding RingLabel}" Foreground="{StaticResource HibOnAccent}"/>
+          </StackPanel>
+        </Button>
+        <Button Classes="soft" Margin="0,0,10,10" Content="Reconnect" Command="{Binding ReconnectCommand}" IsVisible="{Binding !IsConnected}"/>
+        <Button Classes="soft" Margin="0,0,10,10" Content="Pair a phone" Command="{Binding OpenPairCommand}"/>
+        <Button Classes="soft" Margin="0,0,10,10" Content="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding IsConnected}"/>
+      </WrapPanel>
+
+      <!-- Now playing -->
+      <TextBlock Text="NOW PLAYING ON PHONE" Classes="section"/>
+      <Border Classes="card">
+        <Panel>
+          <TextBlock Text="Nothing playing" Classes="muted" IsVisible="{Binding !HasMedia}"/>
+          <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasMedia}">
+            <Border Width="112" Height="112" CornerRadius="14" ClipToBounds="True" Background="#2A2140" Margin="0,0,20,0">
+              <Panel>
+                <Image Source="{Binding AlbumArt}" Stretch="UniformToFill" IsVisible="{Binding HasAlbumArt}"/>
+                <PathIcon Width="36" Height="36" Foreground="{StaticResource HibAccentBrush}" IsVisible="{Binding !HasAlbumArt}"
+                          Data="M12,3V12.26C11.5,12.09 11,12 10.5,12C8,12 6,14 6,16.5C6,19 8,21 10.5,21C13,21 15,19 15,16.5V6H19V3H12Z"/>
+              </Panel>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{Binding MediaTitle}" Classes="h2" TextTrimming="CharacterEllipsis"/>
+              <TextBlock Text="{Binding MediaArtist}" Classes="muted" TextTrimming="CharacterEllipsis"/>
+              <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,8,0,0">
+                <TextBlock Text="{Binding Elapsed}" Classes="caption" VerticalAlignment="Center"/>
+                <ProgressBar Grid.Column="1" Value="{Binding Progress}" Maximum="100" Height="4" Margin="10,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="{Binding Duration}" Classes="caption" VerticalAlignment="Center"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <Button Classes="round soft" Command="{Binding PreviousCommand}" ToolTip.Tip="Previous">
+                    <PathIcon Width="16" Height="16" Data="M6,18V6H8V18H6M9.5,12L18,6V18L9.5,12Z"/>
+                  </Button>
+                  <Button Classes="round big accent" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause">
+                    <PathIcon Width="20" Height="20" Data="{Binding PlayPauseIcon}" Foreground="{StaticResource HibOnAccent}"/>
+                  </Button>
+                  <Button Classes="round soft" Command="{Binding NextCommand}" ToolTip.Tip="Next">
+                    <PathIcon Width="16" Height="16" Data="M16,18H18V6H16M6,18L14.5,12L6,6V18Z"/>
+                  </Button>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <Button Classes="round soft" Command="{Binding VolumeDownCommand}" ToolTip.Tip="Phone volume down">
+                    <TextBlock Text="−" FontSize="18" HorizontalAlignment="Center"/>
+                  </Button>
+                  <StackPanel VerticalAlignment="Center" MinWidth="54">
+                    <TextBlock Text="{Binding Volume, StringFormat='{}{0}%'}" HorizontalAlignment="Center" FontWeight="SemiBold"/>
+                    <TextBlock Text="volume" Classes="caption" HorizontalAlignment="Center"/>
+                  </StackPanel>
+                  <Button Classes="round soft" Command="{Binding VolumeUpCommand}" ToolTip.Tip="Phone volume up">
+                    <TextBlock Text="+" FontSize="18" HorizontalAlignment="Center"/>
+                  </Button>
+                  <Button Classes="soft" Command="{Binding ToggleMuteCommand}" Content="Mute"/>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Grid>
+        </Panel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

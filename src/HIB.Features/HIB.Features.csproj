@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HIB.Features</RootNamespace>
+    <AssemblyName>HIB.Features</AssemblyName>
+    <Product>H.I.B for Windows</Product>
+    <Authors>Haitham Hamid</Authors>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same SkiaSharp version Avalonia 12 already ships, so the app pulls no extra native libs. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HIB.Features.Tests" />
+  </ItemGroup>
+
+</Project>

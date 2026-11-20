@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             x:Class="HIB.Views.PairView"
+             x:DataType="vm:PairViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,28" Spacing="16" MaxWidth="900">
+      <TextBlock Text="Pair your phone" Classes="h1"/>
+      <Border Classes="hero">
+        <Grid ColumnDefinitions="Auto,*">
+          <Border Background="White" CornerRadius="18" Padding="12" Margin="0,0,26,0" VerticalAlignment="Top">
+            <Image Source="{Binding QrImage}" Width="250" Height="250" RenderOptions.BitmapInterpolationMode="None"/>
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Text="Scan with H.I.B on Android" Classes="h2"/>
+            <TextBlock Classes="muted" TextWrapping="Wrap"
+                       Text="Open H.I.B on your phone, tap the scan button and point it at this code. Both devices must be on the same network (or Tailscale)."/>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+              <Border Classes="pill"><TextBlock Text="{Binding DesktopName}" FontSize="12"/></Border>
+              <Border Classes="pill"><TextBlock Text="{Binding Port, StringFormat='Port {0}'}" FontSize="12"/></Border>
+              <Border Classes="pill"><TextBlock Text="PLUS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource HibAccentBrush}"/></Border>
+            </StackPanel>
+            <TextBlock Text="{Binding ConnectionStatus}" FontWeight="SemiBold" Margin="0,6,0,0"/>
+            <WrapPanel Margin="0,6,0,0">
+              <Button Classes="soft" Content="Refresh" Margin="0,0,8,8" Command="{Binding RefreshCommand}"/>
+              <Button Classes="soft" Content="Ask phone to connect" Margin="0,0,8,8" Command="{Binding WakeCommand}"/>
+              <Button Classes="soft" Content="Show code text" Margin="0,0,8,8" Command="{Binding ToggleQrTextCommand}"/>
+            </WrapPanel>
+            <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <SelectableTextBlock Text="{Binding QrText}" IsVisible="{Binding ShowQrText}" TextWrapping="Wrap" FontFamily="Consolas, Menlo, monospace" FontSize="12" Foreground="{StaticResource HibMuted}"/>
+
+      <Grid ColumnDefinitions="*,16,*">
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <TextBlock Text="This computer's addresses" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding Addresses}" Classes="muted" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding DiscoveryMode}" Classes="caption" Margin="0,6,0,0"/>
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="2" Classes="card">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Phones nearby" FontWeight="SemiBold"/>
+            <TextBlock Text="None found yet." Classes="muted" IsVisible="{Binding !HasPhones}"/>
+            <ItemsControl ItemsSource="{Binding Phones}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DiscoveredPhoneItem">
+                  <StackPanel Margin="0,2">
+                    <TextBlock Text="{Binding Name}"/>
+                    <TextBlock Text="{Binding Ips}" Classes="caption"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Border Classes="card" IsVisible="{Binding FirewallSupported}">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="Windows Firewall" FontWeight="SemiBold"/>
+            <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                       Text="If the phone can't connect, allow H.I.B through the firewall (TCP 6996, UDP 8889 and 5353 on private networks). Windows will ask for permission."/>
+          </StackPanel>
+          <Button Grid.Column="1" Classes="soft" Content="Allow through firewall" Margin="12,0,0,0" VerticalAlignment="Center" Command="{Binding AddFirewallRuleCommand}"/>
+        </Grid>
+      </Border>
+
+      <Border Classes="card">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="Reset pairing" FontWeight="SemiBold"/>
+            <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                       Text="Creates a new encryption key. Every phone has to scan the new code."/>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="12,0,0,0">
+            <Button Classes="danger" Content="Reset…" Command="{Binding AskResetCommand}" IsVisible="{Binding !ConfirmReset}"/>
+            <Button Classes="soft" Content="Cancel" Command="{Binding CancelResetCommand}" IsVisible="{Binding ConfirmReset}"/>
+            <Button Classes="danger" Content="Yes, new key" Command="{Binding ResetCommand}" IsVisible="{Binding ConfirmReset}"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

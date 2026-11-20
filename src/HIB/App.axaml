@@ -1,0 +1,206 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HIB.App"
+             xmlns:local="using:HIB"
+             Name="H.I.B"
+             RequestedThemeVariant="Dark">
+
+  <Application.DataTemplates>
+    <local:ViewLocator />
+  </Application.DataTemplates>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <Color x:Key="HibAccent">#B79CFF</Color>
+      <Color x:Key="HibAccentDeep">#8E6CF0</Color>
+      <SolidColorBrush x:Key="HibBg" Color="#0F0D14"/>
+      <SolidColorBrush x:Key="HibSidebar" Color="#14111B"/>
+      <SolidColorBrush x:Key="HibCard" Color="#1B1724"/>
+      <SolidColorBrush x:Key="HibCardHover" Color="#231E2F"/>
+      <SolidColorBrush x:Key="HibStroke" Color="#2B2538"/>
+      <SolidColorBrush x:Key="HibText" Color="#EEEAF8"/>
+      <SolidColorBrush x:Key="HibMuted" Color="#9E97B0"/>
+      <SolidColorBrush x:Key="HibAccentBrush" Color="#B79CFF"/>
+      <SolidColorBrush x:Key="HibAccentSoft" Color="#2A2140"/>
+      <SolidColorBrush x:Key="HibOnAccent" Color="#1A1328"/>
+      <SolidColorBrush x:Key="HibGood" Color="#7EE0A8"/>
+      <SolidColorBrush x:Key="HibDanger" Color="#FF7A8A"/>
+      <LinearGradientBrush x:Key="HibHero" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Color="#2B2145" Offset="0"/>
+        <GradientStop Color="#1B1724" Offset="1"/>
+      </LinearGradientBrush>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark" Accent="#B79CFF" RegionColor="#0F0D14" AltHigh="#0F0D14"
+                               BaseHigh="#EEEAF8" ChromeMediumLow="#1B1724" ChromeLow="#14111B"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
+
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="fonts:Inter#Inter, $Default"/>
+    </Style>
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource HibText}"/>
+    </Style>
+
+    <!-- typography -->
+    <Style Selector="TextBlock.h1">
+      <Setter Property="FontSize" Value="26"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.h2">
+      <Setter Property="FontSize" Value="17"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+    </Style>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="LetterSpacing" Value="1"/>
+      <Setter Property="Margin" Value="0,18,0,8"/>
+    </Style>
+    <Style Selector="TextBlock.toast-title">
+      <Setter Property="FontSize" Value="14.5"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.toast-body">
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="#CFC8E0"/>
+    </Style>
+
+    <!-- surfaces -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{StaticResource HibCard}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibStroke}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="18"/>
+    </Style>
+    <Style Selector="Border.hero">
+      <Setter Property="Background" Value="{StaticResource HibHero}"/>
+      <Setter Property="BorderBrush" Value="#3A2F55"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Padding" Value="22"/>
+    </Style>
+    <Style Selector="Border.toast">
+      <Setter Property="Background" Value="#F01B1724"/>
+      <Setter Property="BorderBrush" Value="#3A3150"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="14,12"/>
+      <Setter Property="BoxShadow" Value="0 8 24 0 #80000000"/>
+    </Style>
+    <Style Selector="Border.pill">
+      <Setter Property="Background" Value="{StaticResource HibAccentSoft}"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="10,3"/>
+    </Style>
+    <Style Selector="Border.badge">
+      <Setter Property="Background" Value="{StaticResource HibAccentBrush}"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="6,1"/>
+      <Setter Property="MinWidth" Value="20"/>
+    </Style>
+
+    <!-- buttons -->
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="14,7"/>
+    </Style>
+    <Style Selector="Button.accent">
+      <Setter Property="Background" Value="{StaticResource HibAccentBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource HibOnAccent}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#C9B5FF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibOnAccent}"/>
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="#A587F5"/>
+    </Style>
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="#3A1E28"/>
+      <Setter Property="Foreground" Value="{StaticResource HibDanger}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#4C2533"/>
+      <Setter Property="Foreground" Value="{StaticResource HibDanger}"/>
+    </Style>
+    <Style Selector="Button.soft">
+      <Setter Property="Background" Value="{StaticResource HibAccentSoft}"/>
+      <Setter Property="Foreground" Value="{StaticResource HibText}"/>
+    </Style>
+    <Style Selector="Button.soft:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#352A52"/>
+      <Setter Property="Foreground" Value="{StaticResource HibText}"/>
+    </Style>
+    <Style Selector="Button.icon-btn">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding" Value="6"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+    </Style>
+    <Style Selector="Button.round">
+      <Setter Property="Width" Value="44"/>
+      <Setter Property="Height" Value="44"/>
+      <Setter Property="CornerRadius" Value="22"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.round.big">
+      <Setter Property="Width" Value="56"/>
+      <Setter Property="Height" Value="56"/>
+      <Setter Property="CornerRadius" Value="28"/>
+    </Style>
+
+    <!-- sidebar -->
+    <Style Selector="Button.nav">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="Margin" Value="0,1"/>
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1E1A29"/>
+    </Style>
+    <Style Selector="Button.nav.selected">
+      <Setter Property="Background" Value="{StaticResource HibAccentSoft}"/>
+      <Setter Property="Foreground" Value="{StaticResource HibAccentBrush}"/>
+    </Style>
+    <Style Selector="Button.nav.selected:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#30264A"/>
+    </Style>
+    <Style Selector="Button.nav TextBlock">
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}"/>
+    </Style>
+
+    <Style Selector="ProgressBar">
+      <Setter Property="Foreground" Value="{StaticResource HibAccentBrush}"/>
+      <Setter Property="Background" Value="#2E2840"/>
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="10"/>
+    </Style>
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OnContent" Value=""/>
+      <Setter Property="OffContent" Value=""/>
+    </Style>
+  </Application.Styles>
+</Application>

@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             x:Class="HIB.Views.FilesView"
+             x:DataType="vm:FilesViewModel">
+  <Grid RowDefinitions="Auto,Auto,*" Margin="32,28,32,0">
+    <Grid ColumnDefinitions="*,Auto">
+      <TextBlock Text="Files" Classes="h1"/>
+      <Button Grid.Column="1" Classes="soft" Content="Open Downloads" Command="{Binding OpenDownloadsCommand}"/>
+    </Grid>
+    <TextBlock Grid.Row="1" Classes="muted" TextWrapping="Wrap" Margin="0,6,0,12"
+               Text="{Binding DownloadsPath, StringFormat='Flick a file up off your phone screen and it lands here. Saved to {0}.'}"/>
+    <ScrollViewer Grid.Row="2">
+      <StackPanel Spacing="8" Margin="0,0,8,24">
+        <TextBlock Text="No files received yet." Classes="muted" IsVisible="{Binding IsEmpty}"/>
+        <ItemsControl ItemsSource="{Binding Transfers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TransferItemViewModel">
+              <Border Classes="card" Margin="0,0,0,8" Padding="14,12">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                  <ProgressBar Value="{Binding Percent}" Maximum="100" Height="6"/>
+                  <TextBlock Text="{Binding Detail}" Classes="caption"/>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ItemsControl ItemsSource="{Binding Files}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:FileItemViewModel">
+              <Border Classes="card" Margin="0,0,0,8" Padding="14,12">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <PathIcon Width="22" Height="22" Margin="0,0,14,0" Foreground="{StaticResource HibAccentBrush}"
+                            Data="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Detail}" Classes="caption"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <Button Classes="accent" Content="Open" Command="{Binding OpenCommand}"/>
+                    <Button Classes="soft" Content="Show in folder" Command="{Binding RevealCommand}"/>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

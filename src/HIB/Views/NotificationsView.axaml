@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:s="using:HIB.Services"
+             x:Class="HIB.Views.NotificationsView"
+             x:DataType="vm:NotificationsViewModel">
+  <Grid RowDefinitions="Auto,Auto,*" Margin="32,28,32,0">
+    <Grid ColumnDefinitions="*,Auto,Auto">
+      <TextBlock Text="Notifications" Classes="h1"/>
+      <Button Grid.Column="1" Classes="soft" Content="Clear list" Margin="0,0,8,0" Command="{Binding ClearLocalCommand}"/>
+      <Button Grid.Column="2" Classes="danger" Content="Dismiss all on phone" Command="{Binding ClearAllCommand}"/>
+    </Grid>
+    <TextBlock Grid.Row="1" Text="{Binding Status}" Classes="muted" Margin="0,6,0,10"/>
+    <Panel Grid.Row="2">
+      <StackPanel IsVisible="{Binding IsEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+        <PathIcon Width="40" Height="40" Foreground="{StaticResource HibAccentBrush}" Data="M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M14,21A2,2 0 0,1 12,23A2,2 0 0,1 10,21"/>
+        <TextBlock Text="You're all caught up" Classes="h2" HorizontalAlignment="Center"/>
+        <TextBlock Text="Phone notifications show up here and as pop-ups." Classes="muted" HorizontalAlignment="Center"/>
+      </StackPanel>
+      <ScrollViewer IsVisible="{Binding !IsEmpty}">
+        <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,8,24">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:NotificationItemViewModel">
+              <Border Classes="card" Margin="0,0,0,10" Padding="16,14">
+                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+                  <Border Grid.RowSpan="2" Width="38" Height="38" CornerRadius="10" ClipToBounds="True" Background="{StaticResource HibAccentSoft}" Margin="0,0,14,0" VerticalAlignment="Top">
+                    <Panel>
+                      <Image Source="{Binding Icon}" IsVisible="{Binding HasIcon}"/>
+                      <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasIcon}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="{StaticResource HibAccentBrush}"/>
+                    </Panel>
+                  </Border>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding App}" Classes="caption"/>
+                    <TextBlock Text="·" Classes="caption"/>
+                    <TextBlock Text="{Binding Time}" Classes="caption"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+                    <Button Classes="icon-btn" Command="{Binding MuteAppCommand}" ToolTip.Tip="Stop forwarding this app">
+                      <PathIcon Width="13" Height="13" Data="M20.84,22.73L18.11,20H3V19L5,17V11C5,9.86 5.29,8.73 5.83,7.72L1,2.89L2.28,1.61L22.11,21.44L20.84,22.73M19,15.8V11C19,7.9 16.97,5.17 14,4.29C14,4.19 14,4.1 14,4A2,2 0 0,0 12,2A2,2 0 0,0 10,4C10,4.1 10,4.19 10,4.29C9.39,4.47 8.8,4.74 8.26,5.09L19,15.8M12,23A2,2 0 0,0 14,21H10A2,2 0 0,0 12,23Z"/>
+                    </Button>
+                    <Button Classes="icon-btn" Command="{Binding DismissCommand}" ToolTip.Tip="Dismiss on phone">
+                      <PathIcon Width="11" Height="11" Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+                    </Button>
+                  </StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="2" Margin="0,2,0,0">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Foreground="#CFC8E0" IsVisible="{Binding HasBody}"/>
+                    <ProgressBar Value="{Binding ProgressValue}" IsIndeterminate="{Binding IsIndeterminate}" Height="4" Margin="0,6,0,0" IsVisible="{Binding HasProgress}"/>
+                  </StackPanel>
+                  <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,10,0,0" IsVisible="{Binding CanReply}">
+                    <TextBox Text="{Binding ReplyText}" PlaceholderText="{Binding ReplyAction, StringFormat='{}{0}…'}">
+                      <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding SendReplyCommand}"/>
+                      </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Grid.Column="1" Classes="accent" Content="Send" Margin="8,0,0,0" Command="{Binding SendReplyCommand}"/>
+                  </Grid>
+                  <ItemsControl Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding Buttons}" Margin="0,8,0,0">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="s:ToastButton">
+                        <Button Classes="soft" Content="{Binding Label}" Command="{Binding Command}" Margin="0,0,6,0"/>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Panel>
+  </Grid>
+</UserControl>

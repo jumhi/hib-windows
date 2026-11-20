@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             x:Class="HIB.Views.ClipboardView"
+             x:DataType="vm:ClipboardViewModel">
+  <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="32,28,32,0">
+    <Grid ColumnDefinitions="*,Auto">
+      <TextBlock Text="Clipboard" Classes="h1"/>
+      <Button Grid.Column="1" Classes="soft" Content="Clear history" Command="{Binding ClearCommand}"/>
+    </Grid>
+    <Border Grid.Row="1" Classes="card" Margin="0,16,0,0">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="Sync clipboard with the phone" FontWeight="SemiBold"/>
+            <TextBlock Text="Copy on one, paste on the other. Text and images (up to 8 MB)." Classes="muted" FontSize="12"/>
+          </StackPanel>
+          <ToggleSwitch Grid.Column="1" IsChecked="{Binding SyncEnabled}"/>
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Include images" VerticalAlignment="Center"/>
+          <ToggleSwitch Grid.Column="1" IsChecked="{Binding ImagesEnabled}"/>
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox Text="{Binding SendText}" PlaceholderText="Send text to the phone's clipboard…" AcceptsReturn="False"/>
+          <Button Grid.Column="1" Classes="accent" Content="Send" Margin="8,0,0,0" Command="{Binding SendCommand}"/>
+        </Grid>
+        <TextBlock Text="{Binding Status}" Classes="muted" FontSize="12"/>
+      </StackPanel>
+    </Border>
+    <TextBlock Grid.Row="2" Text="HISTORY" Classes="section"/>
+    <Panel Grid.Row="3">
+      <TextBlock Text="Nothing copied yet." Classes="muted" IsVisible="{Binding IsEmpty}"/>
+      <ScrollViewer IsVisible="{Binding !IsEmpty}">
+        <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,8,24">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ClipboardItemViewModel">
+              <Border Classes="card" Margin="0,0,0,8" Padding="14,12">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Classes="pill">
+                      <TextBlock Text="{Binding Direction}" FontSize="11" Foreground="{StaticResource HibAccentBrush}"/>
+                    </Border>
+                    <TextBlock Text="{Binding Time}" Classes="caption" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="soft" Content="Copy" Command="{Binding $parent[ItemsControl].((vm:ClipboardViewModel)DataContext).CopyCommand}" CommandParameter="{Binding}"/>
+                  <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Text}" TextWrapping="Wrap" MaxLines="6" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" IsVisible="{Binding IsText}"/>
+                  <Border Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Left" CornerRadius="10" ClipToBounds="True" Margin="0,8,0,0" MaxHeight="180" IsVisible="{Binding IsImage}">
+                    <Image Source="{Binding Image}" Stretch="Uniform"/>
+                  </Border>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Panel>
+  </Grid>
+</UserControl>

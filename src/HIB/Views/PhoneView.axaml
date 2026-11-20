@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             x:Class="HIB.Views.PhoneView"
+             x:DataType="vm:PhoneViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,28" Spacing="14" MaxWidth="960">
+      <TextBlock Text="Phone" Classes="h1"/>
+      <TextBlock Text="Mirror the screen, open phone apps in their own windows and play phone audio on this PC. Uses ADB over Wi-Fi (Wireless debugging)." Classes="muted" TextWrapping="Wrap"/>
+
+      <!-- tools missing -->
+      <Border Classes="card" BorderBrush="#5A4A2A" IsVisible="{Binding ToolsMissing}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="scrcpy and adb are needed" FontWeight="SemiBold" Foreground="#FFD27A"/>
+          <TextBlock Text="{Binding ToolsText}" Classes="muted" TextWrapping="Wrap"/>
+          <Grid ColumnDefinitions="*,Auto,Auto">
+            <Border Background="#120F19" CornerRadius="10" Padding="12,8">
+              <SelectableTextBlock Text="{Binding Winget}" FontFamily="Consolas, Menlo, monospace"/>
+            </Border>
+            <Button Grid.Column="1" Classes="accent" Content="Copy" Margin="8,0,0,0" Command="{Binding CopyWingetCommand}"/>
+            <Button Grid.Column="2" Classes="soft" Content="Check again" Margin="8,0,0,0" Command="{Binding CheckToolsCommand}"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- ADB -->
+      <Border Classes="hero">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+          <StackPanel Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Ellipse Width="9" Height="9" Fill="{StaticResource HibGood}" IsVisible="{Binding Adb.IsConnected}" VerticalAlignment="Center"/>
+              <Ellipse Width="9" Height="9" Fill="{StaticResource HibMuted}" IsVisible="{Binding !Adb.IsConnected}" VerticalAlignment="Center"/>
+              <TextBlock Text="ADB" Classes="h2"/>
+            </StackPanel>
+            <TextBlock Text="{Binding AdbStatus}" Classes="muted" TextWrapping="Wrap"/>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+            <Button Classes="accent" Content="Connect" Command="{Binding ConnectCommand}" IsVisible="{Binding !Adb.IsConnected}"/>
+            <Button Classes="soft" Content="Disconnect" Command="{Binding DisconnectCommand}" IsVisible="{Binding Adb.IsConnected}"/>
+            <Button Classes="soft" Content="Pair with ADB QR" Command="{Binding StartPairingCommand}" IsVisible="{Binding !Pairing.IsPairing}"/>
+          </StackPanel>
+          <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+            <TextBlock Text="Connect ADB automatically when the phone connects" VerticalAlignment="Center"/>
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoConnect}"/>
+          </Grid>
+          <!-- pairing QR -->
+          <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="card" Margin="0,14,0,0" IsVisible="{Binding Pairing.IsPairing}">
+            <Grid ColumnDefinitions="Auto,*">
+              <Border Background="White" CornerRadius="14" Padding="10" Margin="0,0,20,0">
+                <Image Source="{Binding PairingQr}" Width="190" Height="190" RenderOptions.BitmapInterpolationMode="None"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                <TextBlock Text="Pair with ADB QR" Classes="h2"/>
+                <TextBlock Classes="muted" TextWrapping="Wrap"
+                           Text="On the phone: Settings → Developer options → Wireless debugging → Pair device with QR code, then scan this code."/>
+                <TextBlock Text="{Binding Pairing.Status}" TextWrapping="Wrap"/>
+                <Button Classes="soft" Content="Cancel" Command="{Binding StopPairingCommand}" HorizontalAlignment="Left"/>
+              </StackPanel>
+            </Grid>
+          </Border>
+        </Grid>
+      </Border>
+
+      <!-- mirroring + audio -->
+      <Grid ColumnDefinitions="*,16,*">
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Screen" Classes="h2"/>
+            <TextBlock Text="Opens the phone in a window you can control with mouse and keyboard." Classes="muted" TextWrapping="Wrap" FontSize="12"/>
+            <WrapPanel Margin="0,4,0,0">
+              <Button Classes="accent" Content="Mirror screen" Margin="0,0,8,8" Command="{Binding MirrorScreenCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+              <Button Classes="soft" Content="Desktop mode" Margin="0,0,8,8" Command="{Binding DesktopModeCommand}" IsEnabled="{Binding Adb.IsConnected}"/>
+              <Button Classes="soft" Content="Close windows" Margin="0,0,8,8" Command="{Binding StopMirroringCommand}" IsVisible="{Binding Mirror.IsMirroring}"/>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="2" Classes="card">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel>
+                <TextBlock Text="Play phone audio on this PC" Classes="h2"/>
+                <TextBlock Text="Music, videos and calls from the phone come out of the PC speakers." Classes="muted" TextWrapping="Wrap" FontSize="12"/>
+              </StackPanel>
+              <ToggleSwitch Grid.Column="1" IsChecked="{Binding Audio.IsActive, Mode=OneWay}" Command="{Binding ToggleAudioCommand}" IsEnabled="{Binding Adb.IsConnected}" VerticalAlignment="Top"/>
+            </Grid>
+            <CheckBox Content="Keep playing on the phone too" IsChecked="{Binding Audio.KeepPlayingOnPhone}"/>
+            <TextBlock Text="{Binding Audio.LastError}" Foreground="{StaticResource HibDanger}" TextWrapping="Wrap" FontSize="12"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap"/>
+
+      <!-- apps -->
+      <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+        <TextBlock Text="APPS IN THEIR OWN WINDOW" Classes="section" Margin="0"/>
+        <TextBox Grid.Column="1" Text="{Binding AppFilter}" PlaceholderText="Filter apps…" Width="220"/>
+      </Grid>
+      <TextBlock Text="The app list arrives from the phone after it connects." Classes="muted" IsVisible="{Binding !HasApps}"/>
+      <ItemsControl ItemsSource="{Binding Apps}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:PhoneAppItem">
+            <Button Classes="nav" Width="112" Height="104" Margin="0,0,8,8" Padding="6"
+                    Command="{Binding $parent[ItemsControl].((vm:PhoneViewModel)DataContext).OpenAppCommand}" CommandParameter="{Binding}"
+                    ToolTip.Tip="{Binding Package}">
+              <StackPanel Spacing="6" HorizontalAlignment="Center">
+                <Border Width="46" Height="46" CornerRadius="12" ClipToBounds="True" Background="{StaticResource HibAccentSoft}" HorizontalAlignment="Center">
+                  <Panel>
+                    <Image Source="{Binding Icon}" IsVisible="{Binding HasIcon}"/>
+                    <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasIcon}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="{StaticResource HibAccentBrush}"/>
+                  </Panel>
+                </Border>
+                <TextBlock Text="{Binding Name}" FontSize="12" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="100" Foreground="{StaticResource HibText}"/>
+              </StackPanel>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Expander Header="ADB console" Margin="0,8,0,0">
+        <SelectableTextBlock Text="{Binding Adb.ConsoleLog}" FontFamily="Consolas, Menlo, monospace" FontSize="11.5" Foreground="{StaticResource HibMuted}" TextWrapping="Wrap"/>
+      </Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
