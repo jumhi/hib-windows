@@ -121,8 +121,34 @@ public sealed class HibCore : IDisposable
     public void Start()
     {
         Link.Start();
+        ApplyTestSpaceEnvironment();
         SpaceEngine.Start();
         if (Options.EnableDiscovery && Settings.Discovery) StartDiscovery();
+    }
+
+    /// <summary>
+    /// Test instances only (HIB_PORT set): HIB_NAME renames this computer, HIB_SPACE_KEY (base64, 32 bytes) sets the
+    /// space key and HIB_SPACE_PEERS="Name=ip:port;Other=ip:port" remembers computers, so two apps can link
+    /// directly on one machine without a phone.
+    /// </summary>
+    void ApplyTestSpaceEnvironment()
+    {
+        if (Environment.GetEnvironmentVariable("HIB_PORT") is null) return;
+        if (Environment.GetEnvironmentVariable("HIB_NAME") is { Length: > 0 } name && name != Settings.DesktopName)
+        {
+            Settings.DesktopName = name;
+            Settings.Save();
+        }
+        if (LenientJson.Base64(Environment.GetEnvironmentVariable("HIB_SPACE_KEY")) is { Length: LinkCrypto.KeySize } key)
+            SpaceEngine.SetSpaceKey(key);
+        foreach (var entry in (Environment.GetEnvironmentVariable("HIB_SPACE_PEERS") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = entry.LastIndexOf('=');
+            var colon = entry.LastIndexOf(':');
+            if (eq <= 0 || colon <= eq || !int.TryParse(entry[(colon + 1)..], out var port)) continue;
+            var id = entry[..eq].Trim();
+            SpaceEngine.RememberPeer(id, id, "mac", new[] { entry[(eq + 1)..colon].Trim() }, port);
+        }
     }
 
     void StartDiscovery()
