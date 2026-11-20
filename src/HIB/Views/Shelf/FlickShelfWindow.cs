@@ -72,6 +72,15 @@ public sealed class FlickShelfWindow : Window
         Icon = ImageUtil.WindowIcon();
         FlickCardWindow.ApplyNoActivate(this);
 
+        _collapse = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(380) };
+        _collapse.Tick += (_, _) =>
+        {
+            _collapse.Stop();
+            if (!_busy) Collapse();
+        };
+        _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+        _poll.Tick += (_, _) => UpdateVisibility();
+
         _pill = new Border
         {
             Width = PillWidth,
@@ -133,14 +142,6 @@ public sealed class FlickShelfWindow : Window
         _root.PointerEntered += (_, _) => _collapse.Stop();
         Content = _root;
 
-        _collapse = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(380) };
-        _collapse.Tick += (_, _) =>
-        {
-            _collapse.Stop();
-            if (!_busy) Collapse();
-        };
-        _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
-        _poll.Tick += (_, _) => UpdateVisibility();
         app.Core.Space.Changed += () => Dispatcher.UIThread.Post(() =>
         {
             if (_expanded) RebuildBubbles();

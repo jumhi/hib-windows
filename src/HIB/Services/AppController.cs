@@ -59,8 +59,10 @@ public sealed class AppController
     public void SendDroppedFiles(System.Collections.Generic.IReadOnlyList<string> paths)
     {
         if (paths.Count == 0) return;
-        var targets = Core.Ecosystem.Targets;
-        var target = targets.FirstOrDefault(t => t.Id == PreferredSendTarget) ?? targets.FirstOrDefault();
+        // SPACE.md §5: an explicit pick, else the target rule (in use → last used → phone).
+        var device = (PreferredSendTarget is { } pick ? Core.Space.Find(pick) : null) is { CanReceive: true } picked ? picked : Core.Space.DefaultTarget;
+        var target = device is null ? null : new SendTarget(device.Id, device.Name,
+            device.IsPhone ? "android" : device.Kind == HIB.Core.Space.SpaceDeviceKind.Windows ? "windows" : "mac", device.Online);
         if (target is null)
         {
             Toasts.Show(new ToastViewModel { Caption = "Send to phone", Title = "Phone not connected", Body = "Connect your phone, then drop the files again.", Icon = ImageUtil.AppIcon() });
@@ -259,7 +261,8 @@ public sealed class AppController
                 Key = key, Caption = "Send to " + target.Name, Title = "Sending " + name, Persistent = true,
                 Body = File.Exists(path) ? FormatSize(new FileInfo(path).Length) : "", Icon = ImageUtil.AppIcon(),
             }));
-            var r = await Core.Sender.SendAsync(path, target.IsPhone ? null : target.Id, target.Name).ConfigureAwait(false);
+            // Direct link, through the phone, or the phone itself (with a Flick preview): SpaceDirectory routes it.
+            var r = (await Core.Space.SendFilesAsync(target.Id, new[] { path }).ConfigureAwait(false))[0];
             Ui.Post(() =>
             {
                 Toasts.Close(key);
