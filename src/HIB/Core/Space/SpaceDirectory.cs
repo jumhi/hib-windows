@@ -41,6 +41,9 @@ public sealed record SpaceDevice(
     bool IsPlayingAudio)
 {
     public bool IsPhone => Kind == SpaceDeviceKind.Phone;
+
+    /// <summary>When this device was last connected (now while online); null when never seen.</summary>
+    public DateTimeOffset? LastSeen { get; init; }
     public bool CanReceive => Route != SpaceRoute.Unavailable;
 
     /// <summary>"Connected", "In use", "Offline".</summary>
@@ -142,4 +145,43 @@ public class SpaceDirectory
 
     /// <summary>Starts/stops playing the phone's audio on this computer (SPACE.md §3.5).</summary>
     public virtual Task<bool> PlayHereAsync(bool on) => Task.FromResult(false);
+
+    // ---------------- additions (engine; safe defaults here) ----------------
+
+    /// <summary>This computer as a device (for the small "This PC" card). Route is always Unavailable.</summary>
+    public virtual SpaceDevice ThisDevice => new(ThisDeviceName, ThisDeviceName, SpaceDeviceKind.Windows, "Windows PC",
+        true, ThisDeviceInUse, SpaceRoute.Unavailable, null, IsPlayingHere) { LastSeen = DateTimeOffset.Now };
+
+    /// <summary>Id of the computer in use right now (may be <see cref="ThisDeviceName"/>), or null.</summary>
+    public virtual string? InUseId => null;
+
+    /// <summary>True when this computer is the one in use (the "This PC" card's "In use").</summary>
+    public virtual bool ThisDeviceInUse => InUseId is { Length: > 0 } id && string.Equals(id, ThisDeviceName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the phone's audio plays on this computer (<see cref="PlayingOn"/> is this one).</summary>
+    public virtual bool IsPlayingHere => PlayingOn is { Length: > 0 } p && string.Equals(p, ThisDeviceName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the phone audio can be started here (phone linked over ADB, scrcpy present).</summary>
+    public virtual bool CanPlayHere => false;
+
+    /// <summary>True once the phone has given this computer the space key (direct links possible).</summary>
+    public virtual bool HasSpaceKey => false;
+
+    /// <summary>The device "Send to…" used last (target rule step 4), or null.</summary>
+    public virtual string? LastTargetId => null;
+
+    /// <summary>
+    /// Every incoming Flick (from the phone, from another computer through the phone, or over a
+    /// direct peer link). Raised on a background thread. Files then arrive on <c>HibCore.Files</c>.
+    /// </summary>
+    public event Action<FlickInfo>? FlickArrived;
+
+    /// <summary>
+    /// Progress of every outgoing file, with the id of the device it goes to ("phone" or a computer's id),
+    /// whatever the route (phone link, direct, through phone). Raised on a background thread.
+    /// </summary>
+    public event Action<string, SendProgress>? SendProgress;
+
+    protected void RaiseFlickArrived(FlickInfo flick) => FlickArrived?.Invoke(flick);
+    protected void RaiseSendProgress(string deviceId, SendProgress progress) => SendProgress?.Invoke(deviceId, progress);
 }

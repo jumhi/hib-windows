@@ -39,6 +39,8 @@ public sealed class FileReceiver
         public string? FlickId;
         public string? SearchFetchId;
         public string? RelayFrom;
+        /// <summary>The session the file arrives on (the phone, or a peer link): acks go back there.</summary>
+        public required ILinkSession Link;
         public required string TempPath;
         public required FileStream Stream;
         public long Received;
@@ -52,7 +54,31 @@ public sealed class FileReceiver
         _tempDir = tempDir;
         Directory.CreateDirectory(tempDir);
         link.MessageReceived += OnMessage;
-        link.ConnectionChanged += (_, connected) => { if (!connected) CancelAll(); };
+        link.ConnectionChanged += (_, connected) => { if (!connected) CancelAll(link); };
+    }
+
+    /// <summary>
+    /// Also receives files on another session (a direct peer link, SPACE.md §3.3), exactly like a
+    /// relayed Flick: chunks are acked and transferVerified/flickLanded answered on that session.
+    /// </summary>
+    public void Attach(ILinkSession session)
+    {
+        if (ReferenceEquals(session, _link)) return;
+        session.MessageReceived += OnMessage;
+        session.ConnectionChanged += OnAttachedConnectionChanged;
+    }
+
+    public void Detach(ILinkSession session)
+    {
+        if (ReferenceEquals(session, _link)) return;
+        session.MessageReceived -= OnMessage;
+        session.ConnectionChanged -= OnAttachedConnectionChanged;
+        CancelAll(session);
+    }
+
+    void OnAttachedConnectionChanged(object? sender, bool connected)
+    {
+        if (!connected && sender is ILinkSession s) CancelAll(s);
     }
 
     /// <summary>
@@ -68,10 +94,11 @@ public sealed class FileReceiver
 
     void OnMessage(object? sender, LinkMessageEventArgs e)
     {
+        var link = sender as ILinkSession ?? _link;
         switch (e.Type)
         {
-            case "fileTransferInit": OnInit(e.Data); break;
-            case "fileChunk": OnChunk(e.Data); break;
+            case "fileTransferInit": OnInit(e.Data, link); break;
+            case "fileChunk": OnChunk(e.Data, link); break;
             case "fileTransferComplete": OnComplete(e.Data); break;
             case "fileTransferCancel": OnCancel(e.Data); break;
         }
@@ -85,7 +112,7 @@ public sealed class FileReceiver
         return string.IsNullOrWhiteSpace(name) ? "file" : name;
     }
 
-    void OnInit(JsonElement d)
+    void OnInit(JsonElement d, ILinkSession link)
     {
         var id = d.Str("id");
         if (string.IsNullOrEmpty(id)) return;
@@ -109,6 +136,7 @@ public sealed class FileReceiver
             FlickId = d.Str("flickId"),
             SearchFetchId = d.Str("searchFetchId"),
             RelayFrom = d.Str("relayFrom"),
+            Link = link,
             TempPath = temp,
             Stream = fs,
         };
@@ -117,7 +145,7 @@ public sealed class FileReceiver
         Progress?.Invoke(new TransferProgress(id, name, inc.Size, 0, false, false, inc.FlickId));
     }
 
-    void OnChunk(JsonElement d)
+    void OnChunk(JsonElement d, ILinkSession link)
     {
         var id = d.Str("id") ?? "";
         var index = d.Int("index") ?? -1;
@@ -141,7 +169,7 @@ public sealed class FileReceiver
             }
         }
         // Always ack, even for unknown ids (the sender's window depends on it).
-        _ = _link.SendAsync("fileChunkAck", new { id, index });
+        _ = link.SendAsync("fileChunkAck", new { id, index });
     }
 
     void OnComplete(JsonElement d)
@@ -158,7 +186,7 @@ public sealed class FileReceiver
                 Dispose(inc, delete: true);
                 Log?.Invoke($"{inc.Name}: size mismatch ({actual} != {size})");
                 Failed?.Invoke(id, "Size mismatch");
-                _ = _link.SendAsync("transferVerified", new { id, verified = false });
+                _ = inc.Link.SendAsync("transferVerified", new { id, verified = false });
                 Progress?.Invoke(new TransferProgress(id, inc.Name, size, actual, true, true, inc.FlickId));
                 return;
             }
@@ -199,10 +227,10 @@ public sealed class FileReceiver
         Log?.Invoke($"Saved {dest}");
         Progress?.Invoke(new TransferProgress(id, inc.Name, size, size, true, false, inc.FlickId));
         // Lets a sending computer (relayed through the phone) know the file is safely on disk.
-        _ = _link.SendAsync("transferVerified", new { id, verified = true });
+        _ = inc.Link.SendAsync("transferVerified", new { id, verified = true });
         Received?.Invoke(new ReceivedFile(id, Path.GetFileName(dest), dest, size, inc.FlickId,
             inc.SearchFetchId is not null, DateTimeOffset.Now) { From = inc.RelayFrom });
-        if (inc.FlickId is not null) _ = _link.SendAsync("flickLanded", new { id = inc.FlickId });
+        if (inc.FlickId is not null) _ = inc.Link.SendAsync("flickLanded", new { id = inc.FlickId });
     }
 
     void OnCancel(JsonElement d)
@@ -216,14 +244,15 @@ public sealed class FileReceiver
         }
         Dispose(inc, delete: true);
         if (ExternalSink?.Owns(id) == true) ExternalSink.Fail(id);
-        Failed?.Invoke(id, "Cancelled by phone");
+        Failed?.Invoke(id, ReferenceEquals(inc.Link, _link) ? "Cancelled by phone" : "Cancelled by the sender");
         Progress?.Invoke(new TransferProgress(id, inc.Name, inc.Size, inc.Received, true, true, inc.FlickId));
     }
 
-    void CancelAll()
+    void CancelAll(ILinkSession link)
     {
-        foreach (var id in _incoming.Keys.ToList())
+        foreach (var (id, candidate) in _incoming.ToList())
         {
+            if (!ReferenceEquals(candidate.Link, link)) continue;
             if (_incoming.TryRemove(id, out var inc))
             {
                 Dispose(inc, delete: true);

@@ -89,6 +89,15 @@ public sealed class LinkServer : ILinkSession, IDisposable
 
     public bool IsListening => _listener is not null;
 
+    /// <summary>
+    /// Handles an upgraded <c>/peer</c> WebSocket (SPACE.md §3.3). Runs for the whole life of the
+    /// peer session; the TCP client is disposed when it returns. Null = peer links off.
+    /// </summary>
+    public Func<WebSocket, TcpClient, string, CancellationToken, Task>? PeerHandler { get; set; }
+
+    /// <summary>False while this computer has no space key: <c>/peer</c> upgrades are refused.</summary>
+    public Func<bool>? PeerAccepts { get; set; }
+
     // ---------------- lifecycle ----------------
 
     public void Start()
@@ -227,6 +236,30 @@ public sealed class LinkServer : ILinkSession, IDisposable
         }
         var path = requestLine.Length > 1 ? requestLine[1].Split('?')[0] : "/";
         var isUpgrade = headers.TryGetValue("Upgrade", out var up) && up.Equals("websocket", StringComparison.OrdinalIgnoreCase);
+
+        // SPACE.md §3.3: computer ↔ computer peer links share this server on a second path.
+        // A computer without a space key yet refuses them (403); /socket below is unchanged.
+        if (isUpgrade && path == "/peer" && headers.TryGetValue("Sec-WebSocket-Key", out var peerKey))
+        {
+            var handler = PeerHandler;
+            if (handler is null || PeerAccepts?.Invoke() != true)
+            {
+                const string refused = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                try { await stream.WriteAsync(Encoding.ASCII.GetBytes(refused), serverCt).ConfigureAwait(false); } catch { }
+                client.Dispose();
+                return;
+            }
+            var peerAccept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(peerKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+            var peerResponse = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                               $"Sec-WebSocket-Accept: {peerAccept}\r\n\r\n";
+            try { await stream.WriteAsync(Encoding.ASCII.GetBytes(peerResponse), serverCt).ConfigureAwait(false); }
+            catch { client.Dispose(); return; }
+            var peerWs = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero });
+            try { await handler(peerWs, client, remote, serverCt).ConfigureAwait(false); }
+            catch (Exception ex) { WriteLog("Peer session error: " + ex.Message); }
+            finally { client.Dispose(); }
+            return;
+        }
 
         if (!isUpgrade || path != "/socket" || !headers.TryGetValue("Sec-WebSocket-Key", out var wsKey))
         {

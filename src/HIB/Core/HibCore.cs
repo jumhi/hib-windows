@@ -20,6 +20,8 @@ public sealed class HibCoreOptions
     public Func<string> DownloadsDir { get; set; } = () => AppPaths.DownloadsDir;
     public TimeSpan? PingInterval { get; set; }
     public TimeSpan? ActivityTimeout { get; set; }
+    /// <summary>Peer link, activity and Flick-to-phone settings (SPACE.md).</summary>
+    public HIB.Core.Space.SpaceOptions Space { get; set; } = new();
 
     static bool DiscoveryDefault()
     {
@@ -60,7 +62,12 @@ public sealed class HibCore : IDisposable
         Sender = new FileSender(Link);
         Sender.Log += AddLog;
         Ecosystem = new PhoneEcosystem(Link);
-        Space = new HIB.Core.Space.SpaceDirectory(Link, Ecosystem, Sender);
+        var space = new HIB.Core.Space.SpaceEngine(Link, Ecosystem, Sender, Files, Hub, Options.DataDir, Options.Space)
+        {
+            RememberedPhoneName = () => Settings.LastPhoneName,
+        };
+        space.Log += AddLog;
+        Space = space;
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Link.ConnectionChanged += (_, connected) =>
         {
@@ -108,10 +115,40 @@ public sealed class HibCore : IDisposable
         Clipboard.Start();
     }
 
+    /// <summary>The Space engine behind <see cref="Space"/> (peer links, activity, Flick routing).</summary>
+    public HIB.Core.Space.SpaceEngine SpaceEngine => (HIB.Core.Space.SpaceEngine)Space;
+
     public void Start()
     {
         Link.Start();
+        ApplyTestSpaceEnvironment();
+        SpaceEngine.Start();
         if (Options.EnableDiscovery && Settings.Discovery) StartDiscovery();
+    }
+
+    /// <summary>
+    /// Test instances only (HIB_PORT set): HIB_NAME renames this computer, HIB_SPACE_KEY (base64, 32 bytes) sets the
+    /// space key and HIB_SPACE_PEERS="Name=ip:port;Other=ip:port" remembers computers, so two apps can link
+    /// directly on one machine without a phone.
+    /// </summary>
+    void ApplyTestSpaceEnvironment()
+    {
+        if (Environment.GetEnvironmentVariable("HIB_PORT") is null) return;
+        if (Environment.GetEnvironmentVariable("HIB_NAME") is { Length: > 0 } name && name != Settings.DesktopName)
+        {
+            Settings.DesktopName = name;
+            Settings.Save();
+        }
+        if (LenientJson.Base64(Environment.GetEnvironmentVariable("HIB_SPACE_KEY")) is { Length: LinkCrypto.KeySize } key)
+            SpaceEngine.SetSpaceKey(key);
+        foreach (var entry in (Environment.GetEnvironmentVariable("HIB_SPACE_PEERS") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = entry.LastIndexOf('=');
+            var colon = entry.LastIndexOf(':');
+            if (eq <= 0 || colon <= eq || !int.TryParse(entry[(colon + 1)..], out var port)) continue;
+            var id = entry[..eq].Trim();
+            SpaceEngine.RememberPeer(id, id, "mac", new[] { entry[(eq + 1)..colon].Trim() }, port);
+        }
     }
 
     void StartDiscovery()
@@ -174,6 +211,7 @@ public sealed class HibCore : IDisposable
         Clipboard?.Dispose();
         Udp?.Dispose();
         Mdns?.Dispose();
+        SpaceEngine.Dispose();
         Link.Dispose();
     }
 }

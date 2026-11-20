@@ -155,6 +155,8 @@ public sealed class FeatureHost : IDisposable
         Codes = new LoginCodeAutoCopier(Settings, new AppLoginCodeClipboard(core, () => app.MainWindow), Link);
 
         core.Files.ExternalSink = new PhoneFetchSink();
+        // "Play here" (SPACE.md §3.5) drives the same scrcpy audio bridge.
+        core.SpaceEngine.AttachAudio(new PhoneAudioPlayer(Audio));
 
         // ADB follows the link: connect on every device message, disconnect when the phone drops.
         core.Link.MessageReceived += (_, e) =>

@@ -47,6 +47,11 @@ public sealed class FileSender
     public event Action<SendProgress>? Progress;
     public event Action<string>? Log;
 
+    /// <summary>Error text when the session isn't up (the phone by default; a peer link says its own).</summary>
+    public string NotConnectedText { get; init; } = "Phone not connected";
+    /// <summary>Error text when the session drops mid-transfer.</summary>
+    public string LostText { get; init; } = "Phone disconnected";
+
     void OnMessage(object? sender, LinkMessageEventArgs e)
     {
         var id = e.Data.Str("id");
@@ -66,12 +71,20 @@ public sealed class FileSender
     }
 
     /// <summary>Sends <paramref name="path"/> to the phone (<paramref name="relayTo"/> null/"phone") or to another computer.</summary>
-    public async Task<SendResult> SendAsync(string path, string? relayTo, string targetName, CancellationToken ct = default)
+    public Task<SendResult> SendAsync(string path, string? relayTo, string targetName, CancellationToken ct = default)
+        => SendAsync(path, relayTo, targetName, null, null, ct);
+
+    /// <summary>
+    /// Like <see cref="SendAsync(string, string?, string, CancellationToken)"/> with a chosen transfer
+    /// <paramref name="id"/> and extra <c>fileTransferInit</c> fields (e.g. <c>flickId</c>, <c>relayFrom</c>).
+    /// </summary>
+    public async Task<SendResult> SendAsync(string path, string? relayTo, string targetName, string? id,
+        IReadOnlyDictionary<string, object?>? extraInit, CancellationToken ct = default)
     {
-        var id = Guid.NewGuid().ToString();
+        id ??= Guid.NewGuid().ToString();
         var name = Path.GetFileName(path);
         if (!File.Exists(path)) return new SendResult(id, name, false, "File not found");
-        if (!_link.IsConnected) return new SendResult(id, name, false, "Phone not connected");
+        if (!_link.IsConnected) return new SendResult(id, name, false, NotConnectedText);
 
         FileStream fs;
         try { fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 256 * 1024); }
@@ -104,8 +117,10 @@ public sealed class FileSender
             };
             var phone = string.IsNullOrEmpty(relayTo) || relayTo == "phone";
             if (!phone) init["relayTo"] = relayTo;
+            if (extraInit is not null)
+                foreach (var (k, v) in extraInit) init[k] = v;
             if (!await _link.SendAsync("fileTransferInit", init, ct).ConfigureAwait(false))
-                return Fail(id, name, targetName, size, 0, "Phone not connected");
+                return Fail(id, name, targetName, size, 0, NotConnectedText);
             Log?.Invoke($"Sending {name} ({size} bytes) to {targetName}");
             Progress?.Invoke(new SendProgress(id, name, targetName, size, 0, false, false));
 
@@ -121,7 +136,7 @@ public sealed class FileSender
             {
                 ct.ThrowIfCancellationRequested();
                 if (_cancelled.TryRemove(id, out var why)) return Fail(id, name, targetName, size, sentBytes, Reason(why));
-                if (!_link.IsConnected) return Fail(id, name, targetName, size, sentBytes, "Phone disconnected");
+                if (!_link.IsConnected) return Fail(id, name, targetName, size, sentBytes, LostText);
 
                 while (inFlight.Count < Window && next < total)
                 {
@@ -129,7 +144,7 @@ public sealed class FileSender
                     if (read <= 0) return Fail(id, name, targetName, size, sentBytes, "File changed while sending");
                     var b64 = Convert.ToBase64String(buf, 0, read);
                     if (!await _link.SendAsync("fileChunk", new { id, index = next, chunk = b64 }, ct).ConfigureAwait(false))
-                        return Fail(id, name, targetName, size, sentBytes, "Phone disconnected");
+                        return Fail(id, name, targetName, size, sentBytes, LostText);
                     inFlight[next] = (b64, 1, DateTime.UtcNow);
                     next++;
                 }

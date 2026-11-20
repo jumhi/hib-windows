@@ -130,6 +130,10 @@ public sealed record FlickInfo(string Id, string Kind, string Name, string? Mime
 {
     /// <summary>Swipe angle in degrees: 0 = straight up, negative = left, positive = right.</summary>
     public double Angle { get; init; }
+    /// <summary>Where the card left the sender's screen, 0 (left) … 1 (right).</summary>
+    public double ExitXRatio { get; init; } = 0.5;
+    /// <summary>Launch speed in points per second.</summary>
+    public double Velocity { get; init; } = 1800;
     /// <summary>Where the phone points: compass heading, degrees clockwise from north (optional).</summary>
     public double? Heading { get; init; }
     /// <summary>Phone elevation in degrees above the horizon (optional).</summary>
