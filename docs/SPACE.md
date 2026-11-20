@@ -442,3 +442,97 @@ the user into PowerShell. The phone can always see its **own** services, so it t
 2. `adb mdns services` stays only as a fallback when the phone doesn't send `adbSetupState` (old app).
 3. Always the bundled adb; never ask the user to install platform-tools or edit PATH.
 4. The Mirror / Desktop / app buttons open this card whenever ADB isn't ready, never a dead end.
+
+## 9. Shared mouse & keyboard ("Roam")
+
+One mouse and keyboard move across the Mac and the PC: push the cursor off the edge that faces the
+other computer and it carries on there, typing included. Both computers' own mice/keyboards keep
+working; whichever you touch drives. Modelled on Deskflow's mechanisms (reference source:
+deskflow-master, GPL-2.0 — learn the mechanism, write our own code; don't transliterate its files).
+Everything travels over the existing authenticated **peer link** (§3.3) — no new port, no new trust.
+
+### 9.1 Roles
+- **Controller:** the computer whose local physical input pushed the cursor across its edge. It
+  captures its own mouse/keyboard (swallowed locally, cursor hidden and parked), tracks a virtual
+  cursor on the target and sends events.
+- **Target:** injects what it receives. If the target sees local **physical** input (not injected —
+  Mac: our event-source marker; Windows: `LLMHF_INJECTED`/`LLKHF_INJECTED` or our `dwExtraInfo`
+  marker) while controlled, it sends `ctlRelease` and the controller returns the cursor home.
+- Either computer can be the controller at different times (symmetric).
+- **Safety:** peer link lost or no pong within 2 s while controlling → release at once (cursor back
+  home at the edge it left from, local input un-swallowed). Releasing never needs the network.
+
+### 9.2 Layout (where the other computer is)
+- P→D `screenLayout` (phone → every computer; after each handshake and whenever the Point & Flick map
+  changes): `{"screens":[{"computer":"<desktop name>","screen":"<id>","h":214.0,"e":8.5}]}`.
+- Each computer computes, for every other linked computer B, its side relative to itself A from the
+  mean aim of each computer's screens (unit-vector mean): `dh` = signed heading difference B − A in
+  (−180, 180], `de` = eB − eA. If |dh| ≥ |de|: B is **right** when dh > 0, else **left**. Otherwise B
+  is **above** when de > 0, else **below**. Both computers must agree (same function).
+- No aims for both → the Devices tab asks once: "Where is <name>? ← Left / Right →" (default right),
+  synced to the other computer in `ctlHello`. A manual choice overrides aims.
+- The shared edge is the outer edge of each computer's whole desktop (bounding box of its screens) on
+  that side. Crossing at position p along the controller's edge enters the target at the same
+  proportional position along its opposite edge, then clamps into a real screen.
+- Switch rules (from Deskflow's Server::isSwitchOkay): no switch within 24 px of a corner (keeps hot
+  corners), no switch while a mouse button is held unless a file drag is in progress (§9.5).
+
+### 9.3 Peer messages (both directions, over the peer link)
+All coordinates are the **target's** desktop coordinates (points/DIPs, y down — as in `screensInfo`).
+```json
+{"type":"ctlHello","data":{"v":1,"enabled":true,"platform":"mac|windows",
+  "screens":[{"id":"…","x":0,"y":0,"w":1512,"h":982}],"manualSide":null|"left"|"right"|"above"|"below",
+  "cmdAsCtrl":true}}
+{"type":"ctlEnter","data":{"x":0,"y":420,"clipboard":{"text":"…"}|null}}
+{"type":"ctlMove","data":{"x":12.5,"y":431}}                // absolute; coalesced to ≤ 1 per 8 ms
+{"type":"ctlButton","data":{"b":"left|right|middle|back|forward","down":true}}
+{"type":"ctlWheel","data":{"dx":0,"dy":-120}}               // 120 = one notch; dy > 0 scrolls up/away
+{"type":"ctlKey","data":{"usage":4,"down":true}}            // USB HID keyboard-page usage, AFTER mapping
+{"type":"ctlLeave","data":{"clipboard":{"text":"…"}|null}}  // controller → target: cursor went home
+{"type":"ctlRelease","data":{}}                             // target → controller: local input here
+{"type":"ctlDragBegin","data":{"id":"…","count":2,"name":"report.pdf"}}
+{"type":"ctlDragCancel","data":{"id":"…"}}
+```
+- `ctlHello` on every peer-link hello and whenever its fields change. `enabled:false` on either side
+  disables Roam for that pair.
+- Keys are sent as **physical** keys (HID usage) so the target's own keyboard layout/input language
+  applies. On release-to-home the controller sends key-up for every key it still holds down.
+- **Modifier mapping** is done by the controller (it knows the target platform). Default `cmdAsCtrl`
+  (Mac user typing on the PC): Mac ⌘ → Ctrl, Mac Control → Windows key, Option ↔ Alt; PC → Mac is the
+  inverse (Ctrl → ⌘, Win → Control, Alt → Option). Off = plain (⌘ ↔ Win, Control ↔ Ctrl).
+- Media keys (volume, play/pause, next/previous, mute, brightness where possible) map to the target's.
+- Order is preserved (one TCP connection; `TCP_NODELAY` on peer sockets). Never coalesce keys/buttons.
+
+### 9.4 Clipboard on crossing
+- `ctlEnter` and `ctlLeave` carry the sender's clipboard text if it changed since the last crossing
+  (≤ 1 MB). The receiver sets it so copy on one computer → paste on the other works instantly, with no
+  round-trip through the phone. The normal phone clipboard sync stays as is.
+
+### 9.5 Dragging files across the edge
+- Controller side: a drag with file items in progress (Mac: the drag pasteboard has file URLs; Windows:
+  an invisible OLE drop-target window under the cursor at the edge, as Deskflow does) crosses the
+  edge → the controller parks its own drag on an invisible **drop catcher** window of H.I.B at the
+  park point (so the local drop lands nowhere else) and sends `ctlDragBegin`.
+- Target side: shows a small ghost card ("report.pdf" / "2 files") following the cursor.
+- Button up on the target → the controller sends the files with the existing file transfer
+  (`flickStart` + §6.9, `relayFrom` = controller) plus `"at":{"x":…,"y":…}` = the drop point. The
+  target turns the ghost into the usual **Flick card at that point** (saved in Downloads; click to
+  open, drag the card into any app). Escape or the cursor going home → `ctlDragCancel`.
+
+### 9.6 What the user sees
+- **Devices tab:** "Mouse & keyboard" row per linked computer: switch (default on), side (from Point
+  setup or the ← / → picker), "⌘ works as Ctrl on the PC" switch. Status: "Move the cursor off the
+  right edge to go to PC-INTERN".
+- **Edge glow:** when the cursor is within 40 px of the shared edge (and Roam is ready), a thin cyan
+  (#20D9FF) glow appears along that edge with a small pill "PC-INTERN →". Fades out when moving away.
+- **In use follows the cursor:** the computer the cursor is on reports `desktopActivity inUse:true`
+  immediately (the other false), so Flick / Play / Send default to it.
+- **Mac permission:** the Mac needs Accessibility (and Input Monitoring for keys). Capture/injection
+  run in a small separate helper, `H.I.B Input`, installed to
+  `~/Library/Application Support/H.I.B/H.I.B Input.app` and replaced **only when its own version
+  changes**, so the permission survives every H.I.B update (H.I.B itself is re-signed ad hoc on each
+  install, which would void the grant). The main app talks to it over a 0600 Unix socket in that
+  folder. Settings shows "Allow H.I.B Input" with a button that opens the right Privacy pane, and a
+  live tick once granted.
+- **Windows:** works without admin; it can't drive elevated (admin) windows or the lock screen — say
+  so in one line in the Devices row's info.
