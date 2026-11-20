@@ -54,6 +54,9 @@ public sealed partial class ToastViewModel : ObservableObject
     public bool Persistent { get; init; }
     public int Seconds { get; init; } = 6;
     public Action<string>? OnReply { get; init; }
+    /// <summary>When set, the toast can be dragged out as this file (into Explorer, WhatsApp, Outlook…).</summary>
+    public string? DragFilePath { get; init; }
+    public bool IsDraggable => !string.IsNullOrEmpty(DragFilePath);
     public Action? OnClick { get; init; }
     /// <summary>Called when the user presses ×.</summary>
     public Action? OnDismiss { get; init; }

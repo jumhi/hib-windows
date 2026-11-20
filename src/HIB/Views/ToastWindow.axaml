@@ -27,7 +27,7 @@
 
       <!-- content -->
       <Grid Grid.Row="1" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,8,0,0" Background="Transparent"
-            Cursor="Hand" PointerReleased="OnContentClicked">
+            Cursor="Hand" PointerPressed="OnContentPressed" PointerMoved="OnContentMoved" PointerReleased="OnContentClicked">
         <StackPanel Spacing="2">
           <TextBlock Text="{Binding Title}" Classes="toast-title" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap"/>
           <TextBlock Text="{Binding Body}" Classes="toast-body" TextWrapping="Wrap" MaxLines="4"

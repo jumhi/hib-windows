@@ -135,8 +135,14 @@ public sealed record FlickInfo(string Id, string Kind, string Name, string? Mime
     /// <summary>Phone elevation in degrees above the horizon (optional).</summary>
     public double? Elevation { get; init; }
     public bool IsTransferless => Kind is "link" or "text";
+    /// <summary>Set when another computer sent this through the phone (multi-desktop relay).</summary>
+    public string? From { get; init; }
 }
 
-public sealed record ReceivedFile(string Id, string Name, string Path, long Size, string? FlickId, bool IsSearchFetch, DateTimeOffset Received);
+public sealed record ReceivedFile(string Id, string Name, string Path, long Size, string? FlickId, bool IsSearchFetch, DateTimeOffset Received)
+{
+    /// <summary>The computer that sent it through the phone, if any (multi-desktop relay).</summary>
+    public string? From { get; init; }
+}
 
 public sealed record TransferProgress(string Id, string Name, long Size, long Received, bool Done, bool Failed, string? FlickId);

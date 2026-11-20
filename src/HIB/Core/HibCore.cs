@@ -57,6 +57,9 @@ public sealed class HibCore : IDisposable
         Link.SavedAppPackagesProvider = () => Hub.Apps.Keys.OrderBy(k => k).ToList();
         Files = new FileReceiver(Link, Options.DownloadsDir, Path.Combine(Options.DataDir, "incoming"));
         Files.Log += AddLog;
+        Sender = new FileSender(Link);
+        Sender.Log += AddLog;
+        Ecosystem = new PhoneEcosystem(Link);
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Link.ConnectionChanged += (_, connected) =>
         {
@@ -69,6 +72,10 @@ public sealed class HibCore : IDisposable
     public LinkServer Link { get; }
     public PhoneHub Hub { get; }
     public FileReceiver Files { get; }
+    /// <summary>Desktop → phone / → other computer (through the phone) file sending.</summary>
+    public FileSender Sender { get; }
+    /// <summary>The other computers connected to the phone (multi-desktop).</summary>
+    public PhoneEcosystem Ecosystem { get; }
     public FlickScreenPicker FlickPicker { get; }
     public ClipboardSync? Clipboard { get; private set; }
     public UdpPresence? Udp { get; private set; }

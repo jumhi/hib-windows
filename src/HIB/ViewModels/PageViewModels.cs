@@ -139,7 +139,7 @@ public sealed partial class FileItemViewModel : ObservableObject
     public FileItemViewModel(ReceivedFile f) { File = f; }
     public ReceivedFile File { get; }
     public string Name => File.Name;
-    public string Detail => $"{AppController.FormatSize(File.Size)} · {File.Received:HH:mm} · {(File.FlickId is not null ? "Flick" : File.IsSearchFetch ? "Phone search" : "Phone")}";
+    public string Detail => $"{AppController.FormatSize(File.Size)} · {File.Received:HH:mm} · {(File.From is { Length: > 0 } from ? "From " + from : File.FlickId is not null ? "Flick" : File.IsSearchFetch ? "Phone search" : "Phone")}";
     public string Path => File.Path;
     [RelayCommand] void Open() => PlatformShell.Open(File.Path);
     [RelayCommand] void Reveal() => PlatformShell.RevealInFolder(File.Path);
@@ -155,6 +155,52 @@ public partial class FilesViewModel : ViewModelBase
         foreach (var f in ReceivedFiles.All) Files.Insert(0, new FileItemViewModel(f));
         ReceivedFiles.Added += f => Ui.Post(() => { Files.Insert(0, new FileItemViewModel(f)); OnPropertyChanged(nameof(IsEmpty)); });
         app.Core.Files.Progress += p => Ui.Post(() => OnProgress(p));
+        app.Core.Ecosystem.Changed += () => Ui.Post(RefreshTargets);
+        app.Core.Link.ConnectionChanged += (_, _) => Ui.Post(RefreshTargets);
+        RefreshTargets();
+        if (app.Core.Link.IsConnected) _ = app.Core.Ecosystem.RequestAsync();
+    }
+
+    // ---- Send to… (the phone, or another computer through the phone) ----
+
+    public ObservableCollection<SendTarget> Targets { get; } = new();
+    [ObservableProperty] public partial SendTarget? SelectedTarget { get; set; }
+    public bool CanSend => Targets.Count > 0;
+    public string SendHint => Targets.Count switch
+    {
+        0 => "Connect your phone to send files.",
+        1 => "Drop files anywhere on this window, or choose them, to put them on your phone (Downloads/H.I.B).",
+        _ => "Pick where they go, then drop files anywhere on this window or choose them. Other computers receive them through your phone.",
+    };
+
+    partial void OnSelectedTargetChanged(SendTarget? value)
+    {
+        if (value is not null) _app.PreferredSendTarget = value.Id;
+    }
+
+    void RefreshTargets()
+    {
+        var keep = SelectedTarget?.Id ?? _app.PreferredSendTarget;
+        Targets.Clear();
+        foreach (var t in _app.Core.Ecosystem.Targets) Targets.Add(t);
+        SelectedTarget = Targets.FirstOrDefault(t => t.Id == keep) ?? Targets.FirstOrDefault();
+        OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(SendHint));
+    }
+
+    [RelayCommand]
+    async Task ChooseFiles()
+    {
+        var target = SelectedTarget;
+        var storage = _app.MainWindow?.StorageProvider;
+        if (target is null || storage is null) return;
+        var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Send to " + target.Name,
+            AllowMultiple = true,
+        });
+        var paths = files.Select(f => Avalonia.Platform.Storage.StorageProviderExtensions.TryGetLocalPath(f)).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!).ToList();
+        if (paths.Count > 0) await _app.SendFilesAsync(paths, target);
     }
 
     public ObservableCollection<TransferItemViewModel> Transfers { get; } = new();

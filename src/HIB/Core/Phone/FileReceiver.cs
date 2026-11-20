@@ -38,6 +38,7 @@ public sealed class FileReceiver
         public string? Checksum;
         public string? FlickId;
         public string? SearchFetchId;
+        public string? RelayFrom;
         public required string TempPath;
         public required FileStream Stream;
         public long Received;
@@ -107,6 +108,7 @@ public sealed class FileReceiver
             Checksum = d.Str("checksum"),
             FlickId = d.Str("flickId"),
             SearchFetchId = d.Str("searchFetchId"),
+            RelayFrom = d.Str("relayFrom"),
             TempPath = temp,
             Stream = fs,
         };
@@ -156,6 +158,7 @@ public sealed class FileReceiver
                 Dispose(inc, delete: true);
                 Log?.Invoke($"{inc.Name}: size mismatch ({actual} != {size})");
                 Failed?.Invoke(id, "Size mismatch");
+                _ = _link.SendAsync("transferVerified", new { id, verified = false });
                 Progress?.Invoke(new TransferProgress(id, inc.Name, size, actual, true, true, inc.FlickId));
                 return;
             }
@@ -195,8 +198,10 @@ public sealed class FileReceiver
         }
         Log?.Invoke($"Saved {dest}");
         Progress?.Invoke(new TransferProgress(id, inc.Name, size, size, true, false, inc.FlickId));
+        // Lets a sending computer (relayed through the phone) know the file is safely on disk.
+        _ = _link.SendAsync("transferVerified", new { id, verified = true });
         Received?.Invoke(new ReceivedFile(id, Path.GetFileName(dest), dest, size, inc.FlickId,
-            inc.SearchFetchId is not null, DateTimeOffset.Now));
+            inc.SearchFetchId is not null, DateTimeOffset.Now) { From = inc.RelayFrom });
         if (inc.FlickId is not null) _ = _link.SendAsync("flickLanded", new { id = inc.FlickId });
     }
 

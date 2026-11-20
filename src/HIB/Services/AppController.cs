@@ -26,6 +26,7 @@ public sealed class AppController
     {
         Core = core;
         _lifetime = lifetime;
+        Current = this;
         Toasts = new ToastManager(() => MainWindow);
         Flick = new FlickPresenter(core.FlickPicker, () => MainWindow);
 
@@ -44,6 +45,26 @@ public sealed class AppController
     }
 
     public HibCore Core { get; }
+
+    /// <summary>The running controller (for window-level drag-and-drop).</summary>
+    public static AppController? Current { get; private set; }
+
+    /// <summary>Last "Send to…" choice (target id: "phone" or a computer's name).</summary>
+    public string? PreferredSendTarget { get; set; }
+
+    /// <summary>Files dropped on the main window: send them to the preferred target (default: the phone).</summary>
+    public void SendDroppedFiles(System.Collections.Generic.IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return;
+        var targets = Core.Ecosystem.Targets;
+        var target = targets.FirstOrDefault(t => t.Id == PreferredSendTarget) ?? targets.FirstOrDefault();
+        if (target is null)
+        {
+            Toasts.Show(new ToastViewModel { Caption = "Send to phone", Title = "Phone not connected", Body = "Connect your phone, then drop the files again.", Icon = ImageUtil.AppIcon() });
+            return;
+        }
+        _ = SendFilesAsync(paths, target);
+    }
 
     /// <summary>ADB / mirroring / Find My / Phone Agent services (null in core-only tests).</summary>
     public FeatureHost? Features { get; set; }
@@ -196,6 +217,8 @@ public sealed class AppController
                     Body = url ?? "",
                     Icon = ImageUtil.AppIcon(),
                     Image = ImageUtil.FromBytes(f.Thumbnail),
+                    // Clicking the landed card opens the link (like the Mac's Flick card).
+                    OnClick = safe ? () => PlatformShell.Open(url!) : null,
                 };
                 if (safe && !Core.Settings.AutoOpenLinks)
                     linkToast.Buttons.Add(new ToastButton("Open", () => PlatformShell.Open(url!), "primary"));
@@ -219,7 +242,7 @@ public sealed class AppController
                 Toasts.Show(new ToastViewModel
                 {
                     Key = "flick:" + f.Id,
-                    Caption = "Flick",
+                    Caption = f.From is { Length: > 0 } from ? "From " + from : "Flick",
                     Title = "Receiving " + (string.IsNullOrWhiteSpace(f.Name) ? f.Kind : f.Name),
                     Body = f.Size > 0 ? FormatSize(f.Size) : "",
                     Icon = ImageUtil.AppIcon(),
@@ -247,9 +270,10 @@ public sealed class AppController
                       || f.Name.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) || f.Name.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase);
         var vm = new ToastViewModel
         {
-            Caption = f.FlickId is not null ? "Flick" : "File received",
+            Caption = f.From is { Length: > 0 } from ? "From " + from : f.FlickId is not null ? "Flick" : "File received",
             Title = f.Name,
-            Body = $"{FormatSize(f.Size)} · saved to {Path.GetFileName(Path.GetDirectoryName(f.Path))}",
+            Body = $"{FormatSize(f.Size)} · saved to {Path.GetFileName(Path.GetDirectoryName(f.Path))} · drag me anywhere",
+            DragFilePath = f.Path,
             Icon = ImageUtil.AppIcon(),
             Image = isImage && f.Size < 30_000_000 ? ImageUtil.FromFile(f.Path) : null,
             Seconds = 10,
@@ -265,6 +289,47 @@ public sealed class AppController
         Toasts.Close("flick:" + id);
         if (reason == "Disconnected") return;
         Toasts.Show(new ToastViewModel { Caption = "File transfer", Title = "Transfer failed", Body = reason, Icon = ImageUtil.AppIcon() });
+    }
+
+    // ---------------- send to phone / other computers ----------------
+
+    /// <summary>
+    /// Sends files to the phone (target "phone") or, through the phone, to another computer. Shows a
+    /// progress toast per file and a result toast. Returns how many arrived.
+    /// </summary>
+    public async Task<int> SendFilesAsync(System.Collections.Generic.IEnumerable<string> paths, SendTarget target)
+    {
+        var ok = 0;
+        foreach (var path in paths)
+        {
+            if (Directory.Exists(path))
+            {
+                Ui.Post(() => Toasts.Show(new ToastViewModel { Caption = "Send to " + target.Name, Title = "Folders can't be sent", Body = Path.GetFileName(path), Icon = ImageUtil.AppIcon() }));
+                continue;
+            }
+            var name = Path.GetFileName(path);
+            var key = "send:" + path;
+            Ui.Post(() => Toasts.Show(new ToastViewModel
+            {
+                Key = key, Caption = "Send to " + target.Name, Title = "Sending " + name, Persistent = true,
+                Body = File.Exists(path) ? FormatSize(new FileInfo(path).Length) : "", Icon = ImageUtil.AppIcon(),
+            }));
+            var r = await Core.Sender.SendAsync(path, target.IsPhone ? null : target.Id, target.Name).ConfigureAwait(false);
+            Ui.Post(() =>
+            {
+                Toasts.Close(key);
+                Toasts.Show(new ToastViewModel
+                {
+                    Caption = "Send to " + target.Name,
+                    Title = r.Ok ? "Sent " + name : "Couldn't send " + name,
+                    Body = r.Ok ? (target.IsPhone ? "Saved in Downloads/H.I.B on the phone" : $"It landed on {target.Name}") : r.Error ?? "",
+                    Icon = ImageUtil.AppIcon(),
+                    Seconds = r.Ok ? 5 : 8,
+                });
+            });
+            if (r.Ok) ok++;
+        }
+        return ok;
     }
 
     public static string FormatSize(long bytes)

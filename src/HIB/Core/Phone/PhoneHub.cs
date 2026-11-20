@@ -161,6 +161,7 @@ public sealed class PhoneHub
             Angle = d.Double("angle") ?? 0,
             Heading = d.Double("heading"),
             Elevation = d.Double("elevation"),
+            From = d.Str("from"),
         };
         FlickStarted?.Invoke(info);
         // link/text have no file transfer: the card has "landed" as soon as we handled it.

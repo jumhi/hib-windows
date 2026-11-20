@@ -476,7 +476,11 @@ Wire format (`mac:Core/Util/FileTransfer/FileTransferProtocol.swift`):
      - otherwise → `~/Downloads/<name>`, de-duplicated as `name(1).ext`, followed by a native "Received: name" notification.
   4. On `fileTransferCancel`: delete the partial file and fail the flick card or fetch.
 
-**Desktop → phone.** The Mac's `sendFile()` (`mac:Outgoing.swift:462-562`) sends `init` with a checksum and `isClipboard`, then 64 KiB chunks with a sliding window of 8. It retransmits after 2000 ms without an ack (`ackWaitMs = 2000`), polls every 20 ms, and finishes with `complete`. **However, the current Android app has no handler for `fileTransferInit`, `fileChunk`, or `fileTransferComplete`.** Only `fileChunkAck` is routed, and it goes to FlickSender (`and:utils/WebSocketMessageHandler.kt:102`). Desktop-to-phone WS file transfer therefore **does not work today**. Use ADB push (§7.5) or Quick Share instead. Do not rely on `transferVerified`. Likewise `filePull` (`{"path":"…"}`, `FileTransferProtocol.swift:67-74`) has no phone handler.
+**Desktop → phone.** The Mac's `sendFile()` (`mac:Outgoing.swift`) and Windows' `FileSender` (`win:Core/Phone/FileSender.cs`) send `init` with a SHA-256 `checksum` and `isClipboard`, then 64 KiB chunks with a sliding window of 8, retransmitting after 2000 ms without an ack, and finish with `complete`.
+- **Phone receiver** (multi-desktop phones, `and:multidesk/PhoneFileReceiver.kt`): on `init` it opens a private cache file; each chunk is written at `index * chunkSize` on the socket thread and **always acked** (`fileChunkAck {id,index}`) to the computer that sent it, even for unknown ids. On `complete` it checks the size and the checksum (from `complete` or `init`), publishes the file to **`Download/H.I.B/<name>`** via MediaStore (Android renames on clash), answers **`transferVerified {id, verified}`**, and posts a "Received" notification with **Open**. Progress shows as an ongoing notification with Cancel; cancelling sends `fileTransferCancel {id, reason:"cancelledOnPhone"}`. A `fileTransferCancel` from the desktop discards the partial file. If that computer disconnects mid-transfer the partial file is dropped.
+- Phones older than the multi-desktop build have no receiver: they log the unknown types and never ack, so the sender times out. Senders should treat "no ack within ~10 s" as "phone too old".
+- Desktops should send `transferVerified` too after saving a received file (Windows does; the Mac does from this release). Senders wait up to 10 s for it; a `verified:false` means the file arrived damaged.
+- `filePull` (`{"path":"…"}`) still has no phone handler.
 
 ### 6.10 Phone file browser
 
@@ -675,7 +679,8 @@ Phone parser: `and:deskdeck/DeskDeckRemote.kt:40-85`. Windows equivalents to use
 - `mediaControl`, `volumeControl`, `callControl`
 - `dismissNotification`, `notificationAction`, `toggleAppNotif`
 - `disconnectRequest`, `refreshAdbPorts`, `startQuickShare`, `mirrorAttachment`, `browseLs`
-- `fileTransferInit`/`fileChunk`/`fileTransferComplete` (no phone receiver), `fileChunkAck`, `fileTransferCancel`, `filePull` (no receiver)
+- `fileTransferInit` (optional `relayTo`)/`fileChunk`/`fileTransferComplete` (multi-desktop phones receive or relay them), `fileChunkAck`, `fileTransferCancel`, `transferVerified`, `filePull` (no receiver)
+- `desktopsRequest`
 - `macMediaControlResponse`
 - `ringPhone`, `phoneAudioState`
 - `findRelayConfig`, `findRelayWake`, `findLocate`, `findRing`, `findLock`, `findMessage`, `findPing`, `findPong`, `findMacLocation`, `findMacRingState`
@@ -693,7 +698,8 @@ Phone parser: `and:deskdeck/DeskDeckRemote.kt:40-85`. Windows equivalents to use
 - `appIcons`, `clipboardUpdate`, `clipboardImageUpdate`
 - `call_event`, `call_progress`
 - `macMediaControl`, `remoteControl`, `browseData`
-- `fileTransferInit`, `fileChunk`, `fileTransferComplete`, `fileTransferCancel`
+- `fileTransferInit` (relayed ones carry `relayFrom`), `fileChunk`, `fileTransferComplete`, `fileTransferCancel`, `fileChunkAck` (for desktop→phone files), `transferVerified`
+- `desktopsList`
 - `ringState`, `phoneAudioControl`
 - `findLocation`, `findLockResult`, `findMessageResult`, `findRingState`, `findRingMac`, `findLocateMac`, `findPong`
 - `approvalResponse`
@@ -703,6 +709,51 @@ Phone parser: `and:deskdeck/DeskDeckRemote.kt:40-85`. Windows equivalents to use
 - `deckOpen`, `deckAction`
 
 (\* the Mac drops these as unknown types)
+
+### 6.22 Multi-desktop: several computers, one phone
+
+A multi-desktop phone stays connected to **every** computer it is paired with at once (Mac and Windows), each over its own WebSocket with its own pairing key — nothing changes on the wire for a single computer. The phone keeps the old connection as the *primary* computer (the one its main screen is about) and opens one extra session per other paired computer, each with the primary's reconnect strategy (2 s ×1.5 backoff capped at 10 s / 30 s after 10 failures, only on Wi-Fi/VPN/Ethernet; immediate retry when mDNS/UDP sees that computer's name; wake-up requests reconnect just that computer).
+
+**Pairing** never unpairs another computer: scanning a second computer's QR adds it to the phone's list (`and:multidesk/PairedDesktop.kt`). The first run migrates the single saved device into that list.
+
+**What goes where (phone → desktops)** (`and:multidesk/DesktopRouting.kt`):
+| Kind | Types | Goes to |
+|---|---|---|
+| Phone state | `notification`, `notificationUpdate`, `status`, `clipboardUpdate`, `clipboardImageUpdate`, `call_event`, `call_progress`, `ringState` | **every connected computer** |
+| Reply sent while handling a request | anything | the computer that sent the request |
+| Late reply | `pong`, `*Response`, `browseData`, `phoneSearchResults`, `approvalResponse`, `find*` results, `fileChunkAck`, `transferVerified`, `desktopsList` | the computer that most recently sent a request (30 s window) |
+| Phone-initiated actions | `remoteControl`, `deckAction`, `runScene`, `macMediaControl`, … | the primary computer (or the most recently used other computer when the primary is offline) |
+| Flick | `flickStart` + the file transfer | the computer chosen on the phone's Flick screen (chips appear when more than one computer is connected; the last choice is remembered) |
+
+A `clipboardUpdate`/`clipboardImageUpdate` **from** one computer is also forwarded to the other connected computers (one clipboard across all of them). A non-primary computer's own `status`/`macVolume` are not shown on the phone. `disconnectRequest` from a non-primary computer turns that computer off on the phone until the user turns it back on or that computer sends a wake-up.
+
+**`desktopsRequest` D→P** `{}` — "who else is connected to you?"
+
+**`desktopsList` P→D** — the answer, and pushed unprompted to every connected computer ~0.8 s after any computer connects or drops:
+```json
+{"type":"desktopsList","data":{
+  "phone":{"id":"phone","name":"Haitham's S26"},
+  "desktops":[
+    {"id":"Haitham’s MacBook","name":"Haitham’s MacBook","platform":"mac","type":"MacBook Pro","connected":true},
+    {"id":"Office PC","name":"Office PC","platform":"windows","type":"Windows PC","connected":false}
+  ]}}
+```
+- The recipient is never listed. `id` is the computer's name (the protocol's identity, §9.7). `platform` ∈ `mac|windows` (from `macInfo.type`/`model` containing "Windows"). Offline/turned-off computers are listed with `connected:false`.
+- Desktops ask on every connect and listen for pushes. Old phones ignore `desktopsRequest`, so "no answer" means "phone only".
+
+**Computer → computer files (relayed by the phone).** The sender uses the normal §6.9 sender with one extra field in `fileTransferInit`:
+```json
+{"type":"fileTransferInit","data":{"id":"<uuid>","name":"a.pdf","size":123,"mime":"application/pdf","chunkSize":65536,
+  "isClipboard":false,"checksum":"<sha256>","relayTo":"Haitham’s MacBook"}}
+```
+`relayTo` absent or `"phone"` → the phone keeps the file (receiver above). Otherwise the phone (`and:multidesk/DesktopHub.kt`):
+1. If the target isn't connected, answers `fileTransferCancel {id, reason:"targetOffline"}` at once.
+2. Sends the target a synthetic `flickStart {id, kind:image|video|file (from mime), name, mime, size, exitXRatio:0.5, velocity:1800, angle:0, from:"<sender name>", fromPlatform}` so a card flies in, then the `fileTransferInit` with `relayTo` removed and `relayFrom`, `relayFromPlatform` and `flickId = id` added — an old desktop simply sees a Flick.
+3. Forwards each `fileChunk` and the `fileTransferComplete` from the sender to the target unchanged, and each `fileChunkAck`/`transferVerified` from the target back to the sender. Nothing is stored on the phone: the sender's own ack window paces the whole path.
+4. A `fileTransferCancel` from either side is forwarded to the other. If either computer drops, both get `fileTransferCancel {reason:"peerLost"|"targetLost"}`.
+Cancel reasons a sender may see: `targetOffline`, `targetLost`, `peerLost`, `cancelledOnPhone`, `storage`, `badSize`.
+
+**Receiving a relayed file** is a normal Flick receive (§6.14): the file goes to the Flick destination, the card/toast says "From <relayFrom>", and the receiver answers `transferVerified`.
 
 ---
 
@@ -834,7 +885,7 @@ UUID base `-7461-4694-8146-2162624a682c` (`mac:Core/BLE/BLEConstants.swift:5-50`
 ## 9. Known mismatches and gotchas (handle these in Windows)
 
 1. **Volume action names.** Send `increaseVolume`, `decreaseVolume`, `toggleMute`, or `setVolume` (§6.6), not the Mac's `volumeUp`, `volumeDown`, or `mute`.
-2. **Desktop→phone file transfer and `filePull` have no phone handler.** Use ADB push or Quick Share (§6.9).
+2. **Desktop→phone file transfer needs a multi-desktop phone** (§6.9, §6.22); older phones never ack. `filePull` still has no phone handler.
 3. **`bleAuthToken` can be an IP string** after `refreshAdbPorts` (§4.1). Validate it before storing.
 4. **`call_event` without `normalizedNumber`.** Don't require the field (§6.8).
 5. **The phone hand-builds some JSON** (`device`, `status`, `appIcons`, `dismissalResponse`, `mediaControlResponse`, …) without escaping. Use a tolerant parser, or accept that some messages with quotes in titles may be malformed.
