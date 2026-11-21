@@ -555,3 +555,81 @@ All coordinates are the **target's** desktop coordinates (points/DIPs, y down �
   live tick once granted.
 - **Windows:** works without admin; it can't drive elevated (admin) windows or the lock screen — say
   so in one line in the Devices row's info.
+
+## 10. Room: arrange your desk
+
+Every app that is part of the space (the phone and each computer) appears in one **Room** view, with
+each computer's real displays drawn to their physical shape and size — a 49" Odyssey OLED G9 is a long
+32:9 bar, a MacBook is a laptop. The user drags computers into place (left, right, above, below,
+offset) and that arrangement is what Roam's cursor follows, edge segment by edge segment.
+
+### 10.1 Richer screen info
+`screensInfo` (§7.2) and `ctlHello.screens` (§9.3) items gain:
+`"name":"Odyssey OLED G9"` (friendly monitor name — Mac: `NSScreen.localizedName`; Windows:
+`QueryDisplayConfig` target `monitorFriendlyDeviceName`), `"mmW":1196,"mmH":337` (physical size; Mac:
+`CGDisplayScreenSize`; Windows: EDID from the monitor's registry key; 0 = unknown), `"builtIn":true|false`,
+`"pxW":5120,"pxH":1440` (native pixels), `"scale":1.0`. Unknown mm → assume 0.25 mm per point/DIP.
+
+### 10.2 Room coordinates and `roomLayout` (peer link, both ways)
+- Room space is millimetres, x right, y down. Each computer is one **group**: its screens keep the OS
+  arrangement among themselves (positions = OS desktop coordinates × that computer's primary screen
+  mm-per-DIP; sizes = each screen's own mm). Groups are placed by an offset (gx, gy).
+```json
+{"type":"roomLayout","data":{"v":1,"rev":1763712000000,"by":"<computer id>",
+  "groups":[{"computer":"<desktop name>","x":0,"y":0},{"computer":"PC-INTERN","x":1210,"y":-40}]}}
+```
+- Sent on every peer hello and whenever the user moves something. Highest `rev` (ms timestamp) wins;
+  equal `rev` → lower `by` (UTF-8 bytes) wins. Both computers store and render the same room.
+- **No layout yet** → auto-place with `rev:0` (any edit wins): left → right / above / below from the
+  §9.2 side function (Point setup aims or manualSide), else the Mac first and others to its right;
+  bottoms aligned (screens sit on one desk line).
+- **Learning** (§9.2 dead-edge pushes) now moves the other computer's group so it touches the pushed
+  edge (centred on it) and bumps `rev`.
+
+### 10.3 Portals (how Roam uses the room)
+- For screens a (computer A) and b (computer B ≠ A): a **portal** exists where a's edge and b's
+  opposite edge are within 30 mm of each other and overlap along the edge (right↔left, left↔right,
+  bottom↔top, top↔bottom). Crossing a's edge at room position p (mm along the edge) enters b at the same
+  p, clamped into the overlap, then converted to b's desktop coordinates. Corners: § 9.2 rule.
+- With a room layout, portals replace the §9.2 whole-desktop edges: 3 or 4 computers, above/below and
+  partial overlaps all work. Without one, §9.2 stays as is.
+
+### 10.4 Room view (Mac and Windows; same look)
+- Opens from the Devices tab ("Arrange") and **by itself the first time a new computer joins** ("Arrange
+  your desk"). Title "Your desk", subtitle "Drag your computers to where they really are".
+- A front view of the desk: a soft desk line at the bottom; each display a rounded rectangle at true
+  proportions (glass panel, cyan edge when hovered, the display's name and resolution inside, e.g.
+  "Odyssey OLED G9 · 5120×1440"); a MacBook drawn as a laptop (screen + thin base); external monitors
+  with a small stand. Each computer's screens move together; a label under each group with the
+  computer's name and a "This Mac" / "This PC" badge.
+- Phones/tablets in the space appear as small device chips at the side (with battery), not draggable.
+- Dragging snaps a group's edges to another group's edges within 40 mm and shows the touching segment
+  as a glowing cyan line (that's where the mouse will cross). A group touching nothing shows "Not
+  connected to anything" in amber. Esc / Cancel restores; changes apply live (send `roomLayout`).
+- Scales to fit; works with 2, 3 or 4 computers.
+
+## 11. Point to act
+
+Whatever the phone points at receives what the phone does — not only Flick.
+
+### 11.1 Phone
+- One shared **point target** used by: Desk Deck, the Remote (keys/arrows/text), Scenes, the computer
+  media controls, and the Play on… default. While any of those screens is open, aim tracking runs;
+  target = the computer owning the aimed screen (nearest within 35°, §7.6), else the target rule.
+- Those screens show a chip "→ <computer>" that updates live (light haptic tick on change), and the
+  phone sends `flickAim{screen, label}` so the pointed screen glows with that screen's label.
+- Every action from them goes to the target computer only. Desk Deck: when the target changes, send
+  `deckOpen{open:false}` to the old computer and `deckOpen{open:true}` to the new one; the deck shows
+  the target's live state (CPU, memory, battery, network…).
+
+### 11.2 `flickAim.label`
+- `flickAim` gains optional `"label":"Desk Deck"` (phone-provided, short). The aim-light pill shows it
+  instead of "Flick lands here" (which stays the default when absent).
+
+### 11.3 Windows gains the actions it lacked (match the Mac's payloads exactly)
+- `deckOpen` / `deckState` / `deckAction` / `deckActionResult` (Mac: Core/DeskDeck/DeskDeckManager.swift):
+  lock, screensaver, play_pause, next, previous, vol_up, vol_down, mute, screenshot, phone_audio,
+  mic_mute, mission_control (→ Task View), show_desktop, open_app; brightness where the display allows
+  it; anything unsupported answers `deckActionResult{ok:false,error:"Not available on Windows"}`.
+- `remoteControl` (Mac: WebSocketServer+Handlers.swift, MacRemoteManager) — keys, arrows, text → SendInput.
+- `macMediaControl` (play/pause, next, previous, volume) → media keys / system volume.
