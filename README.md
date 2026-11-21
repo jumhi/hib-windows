@@ -40,6 +40,8 @@ You need: a Windows 10/11 PC and an Android phone (Android 11+), on the same Wi-
 - **Flick:** point your phone at the PC (or any of its screens) and throw anything onto it;
   flick files back to the phone or to your other computers
 - **Devices:** send files and text between the phone and every computer
+- **One mouse and keyboard for your computers:** push the cursor off the edge toward your other computer
+  and keep working there, typing included; drag files across the edge
 - Phone screen mirroring, phone apps in their own windows, phone audio on the PC (scrcpy)
 - Find My phone, ring the phone, Phone Agent
 
