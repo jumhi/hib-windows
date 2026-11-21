@@ -79,6 +79,16 @@ public class RoomTests
         Assert.Equal((0.0, 0.0), Edid.PhysicalSizeMm(new byte[12]));
         Assert.Equal((0.0, 0.0), Edid.PhysicalSizeMm(MakeEdid(0, 0, 0, 0)));
         Assert.Equal("Odyssey G95SC", Edid.MonitorName(MakeEdid(120, 34, 1196, 337, "Odyssey G95SC")));
+
+        // Cleaned at the source (as the Mac does), so both computers use the same numbers: whole mm, turned like the bounds,
+        // and 0 when it can't be right — 0.05–1.5 mm per DIP on each axis, the two within 1.5× of each other.
+        Assert.Equal((1196.0, 337.0), RoomGeometry.Millimetres(1196, 337, 5120, 1440));
+        Assert.Equal((302.0, 196.0), RoomGeometry.Millimetres(301.6, 196.4, 1512, 982));
+        Assert.Equal((336.0, 597.0), RoomGeometry.Millimetres(597, 336, 1440, 2560)); // a portrait monitor
+        Assert.Equal((0.0, 0.0), RoomGeometry.Millimetres(16, 9, 1920, 1080));        // an aspect-only EDID
+        Assert.Equal((0.0, 0.0), RoomGeometry.Millimetres(600, 600, 1920, 1080));     // aspect wildly off
+        Assert.Equal((0.0, 0.0), RoomGeometry.Millimetres(5000, 2800, 1920, 1080));   // a TV claiming metres
+        Assert.Equal((0.0, 0.0), RoomGeometry.Millimetres(0, 337, 5120, 1440));
         Assert.Null(Edid.MonitorName(MakeEdid(120, 34, 1196, 337)));
     }
 
@@ -174,6 +184,12 @@ public class RoomTests
         var back = RoomLayout.Parse(d)!;
         Assert.True(back.SamePlaces(l));
         Assert.Equal(l.Rev, back.Rev);
+        // Offsets are whole millimetres on the wire (half away from zero), and parsed that way.
+        using var frac = JsonDocument.Parse(new RoomLayout(1, Pc, new[] { new RoomGroup(Pc, 1210.5, -40.5) }).ToWire().ToJsonString());
+        Assert.Equal("1211", frac.RootElement.GetProperty("groups")[0].GetProperty("x").GetRawText());
+        Assert.Equal("-41", frac.RootElement.GetProperty("groups")[0].GetProperty("y").GetRawText());
+        using var inFrac = JsonDocument.Parse("""{"v":1,"rev":2,"by":"x","groups":[{"computer":"A","x":12.5,"y":-0.4}]}""");
+        Assert.Equal(new RoomGroup("A", 13, 0), RoomLayout.Parse(inFrac.RootElement)!.Groups[0]);
 
         // Highest rev wins; equal rev → lower by (UTF-8 bytes); the same one never "wins" again.
         var older = l with { Rev = 5 };
@@ -186,47 +202,64 @@ public class RoomTests
         // "Haitham’s MacBook" < "Office PC" in UTF-8, and é (C3 A9) sorts after z.
         Assert.True(RoomLayout.Wins(new RoomLayout(0, Mac, l.Groups), new RoomLayout(0, Pc, l.Groups)));
         Assert.True(RoomLayout.Wins(new RoomLayout(0, "zed", l.Groups), new RoomLayout(0, "éd", l.Groups)));
+        // The same author's same rev with other groups replaces it (an auto layout re-sent after someone joined)…
+        var moved = new RoomLayout(0, Mac, new[] { new RoomGroup(Mac, 0, -196), new RoomGroup(Pc, 302, -337) });
+        Assert.True(RoomLayout.Wins(moved, new RoomLayout(0, Mac, l.Groups)));
+        Assert.True(RoomLayout.Adopt(moved, new RoomLayout(0, Mac, l.Groups), Pc));
+        // …but a computer never takes back an older copy of its own layout; only a newer one (its storage was lost).
+        Assert.False(RoomLayout.Adopt(moved with { By = Pc }, new RoomLayout(0, Pc, l.Groups), Pc));
+        Assert.False(RoomLayout.Adopt(moved with { By = Pc, Rev = 3 }, new RoomLayout(7, Pc, l.Groups), Pc));
+        Assert.True(RoomLayout.Adopt(moved with { By = Pc, Rev = 9 }, new RoomLayout(7, Pc, l.Groups), Pc));
         // A new rev is the clock, but always past the current.
         var now = new DateTime(2026, 11, 21, 12, 0, 0, DateTimeKind.Utc);
         Assert.Equal(new DateTimeOffset(now).ToUnixTimeMilliseconds(), RoomLayout.NextRev(older, now));
         Assert.Equal(l.Rev + 1, RoomLayout.NextRev(l with { Rev = long.MaxValue / 2 }, now) - (long.MaxValue / 2 - l.Rev));
     }
 
+    static (RoamSide, bool) Unknown(string _) => (RoamSide.Right, false);
+
     [Fact]
     public void Auto_place_puts_the_mac_first_and_the_others_beside_it_on_one_desk_line()
     {
         var computers = new[] { PcComputer(), MacComputer() };
-        // Nothing known: the Mac first, the PC to its right, bottoms aligned.
-        var l = RoomGeometry.AutoPlace(computers, (_, _) => null, Pc);
-        Assert.Equal(0, l.Rev);
-        Assert.Equal(Pc, l.By);
-        Assert.Equal(new RoomGroup(Mac, 0, 0), l.Find(Mac));
-        Assert.Equal(new RoomGroup(Pc, 302, -141), l.Find(Pc)); // 196 − 337
-        var room = RoomGeometry.Build(computers, l);
-        Assert.Equal(room.BoundsOf(Mac).Bottom, room.BoundsOf(Pc).Bottom);
+        var none = Array.Empty<RoomGroup>();
+        // Nothing known: the Mac first, the PC to its right, bottoms on y = 0 — the same on the Mac and the PC.
+        var groups = RoomGeometry.AutoPlace(computers, Pc, none, Unknown);
+        Assert.Equal(new[] { new RoomGroup(Pc, 302, -337), new RoomGroup(Mac, 0, -196) }, groups);
+        Assert.Equal(groups.OrderBy(g => g.Computer), RoomGeometry.AutoPlace(computers, Mac, none, Unknown).OrderBy(g => g.Computer));
+        var room = RoomGeometry.Build(computers, groups);
+        Assert.Equal(0, room.BoundsOf(Mac).Bottom);
+        Assert.Equal(0, room.BoundsOf(Pc).Bottom);
 
-        // The side function says the PC is left of the Mac / the Mac is above the PC.
-        var left = RoomGeometry.AutoPlace(computers, (a, b) => a == Mac && b == Pc ? RoamSide.Left : null, Pc);
-        Assert.Equal(new RoomGroup(Pc, -1196, -141), left.Find(Pc));
-        var below = RoomGeometry.AutoPlace(computers, (a, b) => a == Mac && b == Pc ? RoamSide.Below : null, Pc);
-        Assert.Equal(new RoomGroup(Pc, 151 - 598, 196), below.Find(Pc)); // centred under the MacBook
-        // Without a Mac the lowest id anchors; three computers chain to the right.
-        var three = RoomGeometry.AutoPlace(new[] { StudioComputer(), PcComputer() }, (_, _) => null, Studio);
-        Assert.Equal(new RoomGroup(Pc, 0, 0), three.Find(Pc));
-        Assert.Equal(new RoomGroup(Studio, 1196, 337 - 270), three.Find(Studio));
+        // Known sides (Point setup / a manual choice), seen from me: I'm at the origin's desk line, the others around me.
+        var left = RoomGeometry.AutoPlace(computers, Pc, none, id => id == Mac ? (RoamSide.Left, true) : Unknown(id));
+        Assert.Equal(new RoomGroup(Pc, 0, -337), left.Single(g => g.Computer == Pc));
+        Assert.Equal(new RoomGroup(Mac, -302, -196), left.Single(g => g.Computer == Mac)); // bottoms on my bottom
+        var above = RoomGeometry.AutoPlace(computers, Pc, none, id => id == Mac ? (RoamSide.Above, true) : Unknown(id));
+        Assert.Equal(new RoomGroup(Mac, 598 - 151, -337 - 196), above.Single(g => g.Computer == Mac)); // centred on me
+        // Without a Mac: by id, to the right, one desk line.
+        var two = RoomGeometry.AutoPlace(new[] { StudioComputer(), PcComputer() }, Studio, none, Unknown);
+        Assert.Equal(new RoomGroup(Pc, 0, -337), two.Single(g => g.Computer == Pc));
+        Assert.Equal(new RoomGroup(Studio, 1196, -270), two.Single(g => g.Computer == Studio));
+        // Half millimetres round away from zero (a 245.5 mm tall screen: −246).
+        var half = RoomGeometry.AutoPlace(new[] { new RoomComputer("M", "M", "mac", new[] { new RoomScreenSpec("a", "", 0, 0, 1512, 982) }) }, "M", none, Unknown);
+        Assert.Equal(new RoomGroup("M", 0, -246), half[0]);
     }
 
     [Fact]
     public void A_newcomer_goes_beside_an_arrangement_the_user_made()
     {
-        var arranged = Layout((Pc, 0, 0), (Mac, 447, -196));
+        var arranged = new[] { new RoomGroup(Pc, 0, 0), new RoomGroup(Mac, 447, -196) };
         var all = new[] { PcComputer(), MacComputer(), StudioComputer() };
-        var next = RoomGeometry.AddMissing(arranged, all, Pc, (_, _) => null);
-        Assert.Equal(new RoomGroup(Pc, 0, 0), next.Find(Pc)); // untouched
-        Assert.Equal(new RoomGroup(Mac, 447, -196), next.Find(Mac));
-        Assert.Equal(new RoomGroup(Studio, 1196, 337 - 270), next.Find(Studio)); // right of everything, on the desk line
-        var onLeft = RoomGeometry.AddMissing(arranged, all, Pc, (a, b) => b == Studio ? RoamSide.Left : null);
-        Assert.Equal(new RoomGroup(Studio, -480, 67), onLeft.Find(Studio));
+        var next = RoomGeometry.AutoPlace(all, Pc, arranged, Unknown);
+        Assert.Equal(new RoomGroup(Pc, 0, 0), next.Single(g => g.Computer == Pc)); // untouched
+        Assert.Equal(new RoomGroup(Mac, 447, -196), next.Single(g => g.Computer == Mac));
+        Assert.Equal(new RoomGroup(Studio, 1196, 337 - 270), next.Single(g => g.Computer == Studio)); // right of everything, on my desk line
+        var onLeft = RoomGeometry.AutoPlace(all, Pc, arranged, id => id == Studio ? (RoamSide.Left, true) : Unknown(id));
+        Assert.Equal(new RoomGroup(Studio, -480, 67), onLeft.Single(g => g.Computer == Studio));
+        // Learning: touching my group's box, centred on that edge.
+        Assert.Equal((1196.0, 71.0), RoomGeometry.Touching(MacComputer(), RoamSide.Right, new RoamRect(0, 0, 1196, 337))); // 168.5 − 98 = 70.5 → 71
+        Assert.Equal((447.0, -196.0), RoomGeometry.Touching(MacComputer(), RoamSide.Above, new RoamRect(0, 0, 1196, 337)));
     }
 
     [Fact]
@@ -241,9 +274,12 @@ public class RoomTests
         Assert.Equal((0.0, 34.0), (dx, dy));
         // Too far on both axes: nothing.
         Assert.Equal((0.0, 0.0), RoomGeometry.Snap(new[] { new RoamRect(1300, -400, 302, 196) }, new[] { g9 }));
-        // The nearest edge wins.
-        (dx, _) = RoomGeometry.Snap(new[] { new RoamRect(1200, 500, 302, 196) }, new[] { g9 });
-        Assert.Equal(-4, dx);
+        // The nearest edge on each axis: its left edge onto the G9's right edge (−4), its top onto the G9's bottom (−13).
+        Assert.Equal((-4.0, -13.0), RoomGeometry.Snap(new[] { new RoamRect(1200, 350, 302, 196) }, new[] { g9 }));
+        // Edges only snap to groups nearby on the other axis: well below the G9, its right edge doesn't pull.
+        Assert.Equal((0.0, 0.0), RoomGeometry.Snap(new[] { new RoamRect(1200, 500, 302, 196) }, new[] { g9 }));
+        // Stacked groups also centre.
+        Assert.Equal((-20.0, 0.0), RoomGeometry.Snap(new[] { new RoamRect(467, -196, 302, 196) }, new[] { g9 }));
     }
 
     // ---------------- §10.3 portals ----------------
@@ -296,7 +332,7 @@ public class RoomTests
         var c = room.Cross(Pc, G9.Id, RoamSide.Above, 2560, 0)!;
         Assert.Equal((Mac, MacBookScreen.Id), (c.To.Computer, c.To.Id));
         Assert.Equal(756, c.X, 6);
-        Assert.Equal(981, c.Y); // the MacBook's bottom row
+        Assert.Equal(980, c.Y); // 1 point inside the MacBook's bottom row
         // Outside the overlap there is no crossing.
         Assert.Null(room.Cross(Pc, G9.Id, RoamSide.Above, 1000, 0));
         Assert.Null(room.Cross(Pc, G9.Id, RoamSide.Right, 5119, 700));
@@ -304,15 +340,15 @@ public class RoomTests
         c = room.Cross(Mac, MacBookScreen.Id, RoamSide.Below, 0, 981)!;
         Assert.Equal(Pc, c.To.Computer);
         Assert.Equal(447 / (1196.0 / 5120), c.X, 3);
-        Assert.Equal(0, c.Y);
+        Assert.Equal(1, c.Y);
 
         // Clamping: a portal shorter than the edge (the MacBook's bottom 196 mm of the G9's left edge) maps onto the
         // overlap, and the entry point is inside the target screen.
         room = RoomGeometry.Build(new[] { PcComputer(), MacComputer() }, Layout((Pc, 0, 0), (Mac, -302, 141)));
         c = room.Cross(Pc, G9.Id, RoamSide.Left, 0, 1439)!;
-        Assert.Equal(1511, c.X); // the MacBook's right column
+        Assert.Equal(1510, c.X); // 1 point inside the MacBook's right column
         Assert.InRange(c.Y, 980, 981);
-        Assert.Equal(337, c.At, 0); // at the overlap's end
+        Assert.Equal(337, c.Along, 0); // at the overlap's end
         Assert.Equal(0, room.Cross(Pc, G9.Id, RoamSide.Left, 0, 141 / (337.0 / 1440))!.Y, 6);
     }
 
@@ -336,6 +372,15 @@ public class RoomTests
             .Concat(RoomGeometry.Place(MacComputer(), 1196 + 20, 141))
             .Concat(RoomGeometry.Place(StudioComputer(), 1196 + 5, 0)));
         Assert.Equal(Studio, both.PortalAt(Pc, G9.Id, RoamSide.Right, 200)!.ToComputer);
+        // Same gap: the longer overlap (the Studio's 270 mm over the MacBook's 196), then the lower id.
+        var even = new RoomMap(RoomGeometry.Place(PcComputer(), 0, 0)
+            .Concat(RoomGeometry.Place(MacComputer(), 1196, 141))
+            .Concat(RoomGeometry.Place(StudioComputer(), 1196, 0)));
+        Assert.Equal(Studio, even.PortalAt(Pc, G9.Id, RoamSide.Right, 200)!.ToComputer);
+        var same = new RoomMap(RoomGeometry.Place(PcComputer(), 0, 0)
+            .Concat(RoomGeometry.Place(MacComputer(), 1196, 141))
+            .Concat(RoomGeometry.Place(new RoomComputer("Zed", "Zed", "mac", new[] { MacBookScreen }), 1196, 141)));
+        Assert.Equal(Mac, same.PortalAt(Pc, G9.Id, RoamSide.Right, 200)!.ToComputer);
         Assert.Equal(RoamSide.Right, RoomGeometry.SideOf(both.BoundsOf(Pc), both.BoundsOf(Mac)));
         Assert.Equal(RoamSide.Above, RoomGeometry.SideOf(new RoamRect(0, 0, 1196, 337), new RoamRect(447, -196, 302, 196)));
     }
@@ -383,11 +428,11 @@ public class RoomTests
         Assert.Equal(RoamMode.Away, c.Mode);
         Assert.Equal(Mac, h.Entered!.Value.Peer.PeerId);
         Assert.Equal(756, h.Entered.Value.X, 6);
-        Assert.Equal(981, h.Entered.Value.Y);
+        Assert.Equal(980, h.Entered.Value.Y);
         // Over the MacBook's left edge: nothing there, it stops.
         c.Handle(RoamInput.Motion(-2000, -300));
         Assert.Equal(RoamMode.Away, c.Mode);
-        Assert.Equal((0.0, 681.0), c.Virtual);
+        Assert.Equal((0.0, 680.0), c.Virtual);
         // In its bottom-left corner the corner lock holds (§9.2).
         c.Handle(RoamInput.Motion(0, 400));
         Assert.Equal(RoamMode.Away, c.Mode);
@@ -395,8 +440,8 @@ public class RoomTests
         c.Handle(RoamInput.Motion(100, 400));
         Assert.Equal(RoamMode.Home, c.Mode);
         Assert.Equal(1, h.Leaves);
-        Assert.Equal((447 + 100.0 / 1512 * 302) / (1196.0 / 5120), h.Uncaptured!.Value.X, 3);
-        Assert.Equal(2, h.Uncaptured.Value.Y);
+        Assert.Equal((447 + 100.0 / 1512 * 302) / (1196.0 / 5120), h.Uncaptured!.Value.X, 0);
+        Assert.Equal(1, h.Uncaptured.Value.Y);
     }
 
     [Fact]
@@ -415,7 +460,7 @@ public class RoomTests
         Assert.Equal(1, h.Leaves);
         Assert.Contains(h.Sent, m => m.Type == RoamWire.Key && m.Data["usage"]!.GetValue<int>() == 0x04 && !m.Data["down"]!.GetValue<bool>());
         Assert.Equal(Studio, h.Entered!.Value.Peer.PeerId);
-        Assert.Equal(0, h.Entered.Value.X);
+        Assert.Equal(1, h.Entered.Value.X);
         Assert.Equal((100.0 + 74) / 270 * 1080, h.Entered.Value.Y, 1);
         Assert.Null(h.Uncaptured); // never came home in between
         // Down off the Studio's bottom edge → home on the G9.
@@ -465,8 +510,8 @@ public class RoomTests
         var room = d.Pc.Core.Roam.RoomLayout!;
         Assert.Equal(0, room.Rev);
         Assert.Equal(Mac, room.By);
-        Assert.Equal(new RoomGroup(Mac, 0, 0), room.Find(Mac));
-        Assert.Equal(new RoomGroup(Pc, 302, -141), room.Find(Pc));
+        Assert.Equal(new RoomGroup(Mac, 0, -196), room.Find(Mac));
+        Assert.Equal(new RoomGroup(Pc, 302, -337), room.Find(Pc));
         var status = d.Pc.Core.Roam.StatusFor(Mac)!;
         Assert.Equal((RoamSide.Left, RoamSideSource.Room, false), (status.Side, status.SideSource, status.NeedsAsk));
         Assert.Equal($"Move the cursor off the left edge to go to {Mac}", status.Status);
@@ -483,9 +528,9 @@ public class RoomTests
         Assert.Equal(RoamMode.Away, d.Pc.Core.Roam.Mode);
         Assert.True(await Eventually.TrueAsync(() => d.Mac.Core.Roam.ControlledById == Pc));
         Assert.True(await Eventually.TrueAsync(() => d.MacInput.Moves.Count > 0));
-        var at = -141 + 1300 * 337.0 / 1440;
-        Assert.Equal(3022, d.MacInput.Moves[0].X, 0); // the MacBook's right column (1511 points × 2)
-        Assert.Equal(at / 196 * 982 * 2, d.MacInput.Moves[0].Y, 0);
+        var at = -337 + 1300 * 337.0 / 1440;
+        Assert.Equal(3020, d.MacInput.Moves[0].X, 0); // 1 point inside the MacBook's right column (1510 points × 2)
+        Assert.Equal((at + 196) / 196 * 982 * 2, d.MacInput.Moves[0].Y, 0);
         d.PcInput.Raise(RoamInput.Motion(50, 0)); // straight back
         Assert.True(await Eventually.TrueAsync(() => d.Pc.Core.Roam.Mode == RoamMode.Home && d.Mac.Core.Roam.ControlledById is null));
     }
@@ -510,10 +555,10 @@ public class RoomTests
         d.PcInput.Raise(RoamInput.Pointer(2560, -2, false));
         Assert.Equal(RoamMode.Away, d.Pc.Core.Roam.Mode);
         Assert.True(await Eventually.TrueAsync(() => d.MacInput.Moves.Count > 0));
-        Assert.Equal((1512.0, 1962.0), d.MacInput.Moves[0]); // (756, 981) points × 2
+        Assert.Equal((1512.0, 1960.0), d.MacInput.Moves[0]); // (756, 980) points × 2
         d.PcInput.Raise(RoamInput.Motion(0, 20));
         Assert.True(await Eventually.TrueAsync(() => d.Pc.Core.Roam.Mode == RoamMode.Home));
-        Assert.Equal((2560.0, 2.0), d.PcInput.Unparked!.Value);
+        Assert.Equal((2560.0, 1.0), d.PcInput.Unparked!.Value);
 
         // A later edit on the Mac wins on both.
         d.Mac.Core.Roam.SetRoomGroups(new[] { new RoomGroup(Mac, 0, 0), new RoomGroup(Pc, 302, -141) });
@@ -537,7 +582,7 @@ public class RoomTests
         Assert.Equal(new RoamLearnedNotice(Mac, Mac, RoamSide.Right), notice);
         var learned = d.Pc.Core.Roam.RoomLayout!;
         Assert.True(learned.Rev > 0);
-        Assert.Equal(new RoomGroup(Mac, 302 + 1196, -141 + 337 / 2.0 - 98), learned.Find(Mac)); // touching, centred on the edge
+        Assert.Equal(new RoomGroup(Mac, 302 + 1196, -267), learned.Find(Mac)); // touching my group, centred: −337 + 168.5 − 98 = −266.5 → −267
         Assert.True(await Eventually.TrueAsync(() => SameRoom(d)));
         Assert.Equal(RoamSide.Right, d.Pc.Core.Roam.StatusFor(Mac)!.Side);
         // The next push goes across, in the middle of the edge.
@@ -547,14 +592,14 @@ public class RoomTests
         Assert.True(await Eventually.TrueAsync(() => d.Pc.Core.Roam.Mode == RoamMode.Home));
         // Undo: back on the left, as a newer rev both computers keep.
         d.Pc.Core.Roam.UndoLearned();
-        Assert.Equal(new RoomGroup(Mac, 0, 0), d.Pc.Core.Roam.RoomLayout!.Find(Mac));
+        Assert.Equal(new RoomGroup(Mac, 0, -196), d.Pc.Core.Roam.RoomLayout!.Find(Mac));
         Assert.True(d.Pc.Core.Roam.RoomLayout!.Rev > learned.Rev);
         Assert.True(await Eventually.TrueAsync(() => SameRoom(d)));
         Assert.Equal(RoamSide.Left, d.Pc.Core.Roam.StatusFor(Mac)!.Side);
     }
 
     [Fact]
-    public async Task A_computer_seen_for_the_first_time_is_announced_once()
+    public async Task Portals_only_with_computers_that_speak_the_room_and_a_newcomer_is_announced_once()
     {
         var joined = new List<string>();
         var pcIn = new FakeRoamPlatform();
@@ -566,23 +611,32 @@ public class RoomTests
             pc.Core.Roam.SetDisplays(new[] { G9 });
             await using var mac = await RawMac.DialAsync(pc.Core.Link.Port, RoamTests.SpaceKey, Mac);
             await mac.SendRawAsync(RoamUiTests.MacHello);
+            Assert.True(await Eventually.TrueAsync(() => pc.Core.Roam.StatusFor(Mac) is { Ready: true }));
+            // An older Mac (no roomLayout): §9.2 edges, no "Arrange your desk"; it's still placed and told about the room.
+            Assert.False(pc.Core.Roam.InRoom(Mac));
+            Assert.Equal(new RoomGroup(Mac, 0, -246), pc.Core.Roam.RoomLayout?.Find(Mac)); // 982 points × 0.25 mm, whole mm
+            Assert.True(await Eventually.TrueAsync(() => mac.Of("roomLayout").Count > 0));
+            Assert.Equal(0, mac.Of("roomLayout")[0].GetProperty("rev").GetInt64());
+            await Task.Delay(200);
+            lock (joined) Assert.Empty(joined);
+            // Once it speaks roomLayout, its arrangement wins (rev 0, lower id), the portals take over and the room opens once.
+            await mac.SendRawAsync("""{"type":"roomLayout","data":{"v":1,"rev":0,"by":"Haitham’s MacBook","groups":[{"computer":"Haitham’s MacBook","x":0,"y":-246},{"computer":"Office PC","x":378,"y":-92.5}]}}""");
+            Assert.True(await Eventually.TrueAsync(() => pc.Core.Roam.InRoom(Mac)));
+            Assert.Equal(new RoomGroup(Pc, 378, -93), pc.Core.Roam.RoomLayout!.Find(Pc)); // whole mm
             Assert.True(await Eventually.TrueAsync(() => { lock (joined) return joined.Count == 1; }));
             Assert.Equal(Mac, joined[0]);
-            // An older Mac (no roomLayout) on a room nobody arranged: §9.2 edges, but the room still places it.
-            Assert.False(pc.Core.Roam.InRoom(Mac));
-            Assert.NotNull(pc.Core.Roam.RoomLayout?.Find(Mac));
-            Assert.True(await Eventually.TrueAsync(() => mac.Of("roomLayout").Count > 0)); // it was told anyway
-            // Once it speaks roomLayout, the room's portals take over.
-            await mac.SendRawAsync("""{"type":"roomLayout","data":{"v":1,"rev":0,"by":"Haitham’s MacBook","groups":[{"computer":"Haitham’s MacBook","x":0,"y":0},{"computer":"Office PC","x":378,"y":-92.5}]}}""");
-            Assert.True(await Eventually.TrueAsync(() => pc.Core.Roam.InRoom(Mac)));
-            Assert.Equal(new RoomGroup(Pc, 378, -92.5), pc.Core.Roam.RoomLayout!.Find(Pc));
             // One that loses (same rev, a higher `by`) is answered with the winner, so both end up the same.
             var told = mac.Of("roomLayout").Count;
             await mac.SendRawAsync("""{"type":"roomLayout","data":{"v":1,"rev":0,"by":"Zed","groups":[{"computer":"Office PC","x":0,"y":0}]}}""");
             Assert.True(await Eventually.TrueAsync(() => mac.Of("roomLayout").Count > told));
-            var answer = mac.Of("roomLayout").Last();
-            Assert.Equal(Mac, answer.GetProperty("by").GetString());
-            Assert.Equal(new RoomGroup(Pc, 378, -92.5), pc.Core.Roam.RoomLayout!.Find(Pc));
+            Assert.Equal(Mac, mac.Of("roomLayout").Last().GetProperty("by").GetString());
+            Assert.Equal(new RoomGroup(Pc, 378, -93), pc.Core.Roam.RoomLayout!.Find(Pc));
+            // An older copy of this PC's own layout (relayed back) is never taken.
+            pc.Core.Roam.SetRoomGroups(new[] { new RoomGroup(Pc, 0, 0), new RoomGroup(Mac, 447, -246) });
+            var mine = pc.Core.Roam.RoomLayout!;
+            await mac.SendRawAsync("{\"type\":\"roomLayout\",\"data\":{\"v\":1,\"rev\":" + mine.Rev + ",\"by\":\"Office PC\",\"groups\":[{\"computer\":\"Office PC\",\"x\":5,\"y\":5}]}}");
+            await Task.Delay(300);
+            Assert.Equal(new RoomGroup(Pc, 0, 0), pc.Core.Roam.RoomLayout!.Find(Pc));
         }
         await using (var again = new TestHost(name: Pc, space: RoamTests.FastSpace(), root: root, roam: new RoamOptions { Platform = () => pcIn }))
         {
@@ -591,10 +645,12 @@ public class RoomTests
             again.Core.Roam.SetDisplays(new[] { G9 });
             await using var mac = await RawMac.DialAsync(again.Core.Link.Port, RoamTests.SpaceKey, Mac);
             await mac.SendRawAsync(RoamUiTests.MacHello);
-            Assert.True(await Eventually.TrueAsync(() => again.Core.Roam.StatusFor(Mac) is { Ready: true }));
+            await mac.SendRawAsync("""{"type":"roomLayout","data":{"v":1,"rev":0,"by":"Haitham’s MacBook","groups":[{"computer":"Haitham’s MacBook","x":0,"y":-246},{"computer":"Office PC","x":378,"y":-93}]}}""");
+            Assert.True(await Eventually.TrueAsync(() => again.Core.Roam.InRoom(Mac)));
             await Task.Delay(300);
             Assert.Single(joined); // seen before: no second "Arrange your desk"
-            Assert.Equal(new RoomGroup(Pc, 378, -92.5), again.Core.Roam.RoomLayout!.Find(Pc)); // remembered
+            Assert.Equal(new RoomGroup(Mac, 447, -246), again.Core.Roam.RoomLayout!.Find(Mac)); // the arranged room was remembered and wins
+            Assert.True(await Eventually.TrueAsync(() => mac.Of("roomLayout").Any(l => l.GetProperty("by").GetString() == Pc)));
         }
     }
 }

@@ -99,9 +99,9 @@ public sealed partial class ScreenMap
             var b = s.Bounds;
             var d = string.IsNullOrEmpty(display) ? null : details?.FirstOrDefault(x => string.Equals(x.GdiName, display, StringComparison.OrdinalIgnoreCase));
             var name = d is { FriendlyName.Length: > 0 } ? d.FriendlyName : NameFor(display, i);
-            var (mmW, mmH) = d is null ? (0.0, 0.0) : (d.MmW, d.MmH);
-            // EDID sizes are the panel's landscape size: a monitor turned to portrait swaps them.
-            if (mmW > 0 && mmH > 0 && (b.Width > b.Height) != (mmW > mmH) && b.Width != b.Height) (mmW, mmH) = (mmH, mmW);
+            // §10.1 at the source: turned like the bounds (EDID sizes are the panel's landscape size), whole mm, and 0 when it
+            // can't be right (an aspect-only EDID, a TV claiming metres), so both computers use the same numbers.
+            var (mmW, mmH) = d is null ? (0.0, 0.0) : HIB.Core.Roam.RoomGeometry.Millimetres(d.MmW, d.MmH, b.Width / scale, b.Height / scale);
             result.Add((new DisplayScreen(id, name, s.IsPrimary || (!anyPrimary && i == 0),
                 b.X / scale, b.Y / scale, b.Width / scale, b.Height / scale)
             {

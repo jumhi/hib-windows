@@ -1,7 +1,8 @@
-// H.I.B Room in the Roam engine (docs/SPACE.md §10.2–§10.3): keeps the one room layout every computer
-// shares (roomLayout over the peer link: highest rev, then lower `by`), places a computer the first time
-// it joins (rev 0 auto-place, or beside an arrangement the user made), learns moves into the room, and
-// gives the controller the portals among this PC and the ready computers placed with it.
+// H.I.B Room in the Roam engine (docs/SPACE.md §10.2–§10.3), the same model as the Mac's RoamEngine:
+// the stored (winning) roomLayout places the computers it knows; auto-place places the rest around this
+// PC; with nothing stored this PC stands by its own auto layout (rev 0). The layout goes to each linked
+// computer on every hello and whenever it changes (once per version); a received one is adopted by the
+// §10.2 rule. Computers that sent roomLayout are reached through the room's portals; older ones keep §9.2.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,29 +11,30 @@ using HIB.Core.Space;
 
 namespace HIB.Core.Roam;
 
-/// <summary>What the Room view draws: every computer with screens (this one first), the layout and this computer's id.</summary>
-public sealed record RoomSnapshot(IReadOnlyList<RoomComputer> Computers, RoomLayout? Layout, string Self)
+/// <summary>What the Room view draws: every computer with screens (this one first), where each group is, and this computer's id.</summary>
+public sealed record RoomSnapshot(IReadOnlyList<RoomComputer> Computers, IReadOnlyList<RoomGroup> Groups, RoomLayout? Layout, string Self)
 {
-    public RoomMap Map => RoomGeometry.Build(Computers, Layout);
+    public RoomMap Map => RoomGeometry.Build(Computers, Groups);
 }
 
 public sealed partial class RoamEngine
 {
     readonly RoomStore _roomStore;
     RoomMap _roomMap = RoomMap.Empty;
-    RoomLayout? _roomUndo;
+    IReadOnlyList<RoomGroup> _roomGroups = Array.Empty<RoomGroup>();
+    IReadOnlyList<RoomGroup>? _roomUndo;
 
-    /// <summary>The room layout changed (any thread).</summary>
+    /// <summary>The room changed (layout, computers or screens; any thread).</summary>
     public event Action? RoomChanged;
 
-    /// <summary>A computer appeared in the room for the first time ever ("Arrange your desk" opens by itself).</summary>
+    /// <summary>A computer that speaks the room appeared in it for the first time ever ("Arrange your desk" opens by itself).</summary>
     public event Action<RoomComputer>? ComputerJoined;
 
-    /// <summary>The stored room layout (null before there are two computers).</summary>
-    public RoomLayout? RoomLayout => _roomStore.Layout;
+    /// <summary>The layout this PC stands by: the stored (winning) one, else its own auto layout with rev 0.</summary>
+    public RoomLayout? RoomLayout { get { lock (_gate) return OutgoingRoom(); } }
 
     /// <summary>Every computer with screens and where the room places them.</summary>
-    public RoomSnapshot Room { get { lock (_gate) return new RoomSnapshot(Computers(), _roomStore.Layout, Own); } }
+    public RoomSnapshot Room { get { lock (_gate) return new RoomSnapshot(Computers(), _roomGroups, OutgoingRoom(), Own); } }
 
     /// <summary>True when Roam reaches this computer through the room's portals.</summary>
     public bool InRoom(string peerId) { lock (_gate) return PeerFor(peerId) is { } p && UsesRoom(p); }
@@ -45,19 +47,11 @@ public sealed partial class RoamEngine
     {
         Locked(() =>
         {
-            var cur = _roomStore.Layout;
-            var list = new List<RoomGroup>();
-            foreach (var g in groups)
-                if (!list.Any(x => SpaceIds.Same(x.Computer, g.Computer))) list.Add(new RoomGroup(g.Computer, RoomLayout.Round(g.X), RoomLayout.Round(g.Y)));
-            // Computers not in this edit (offline ones) keep their places.
-            if (cur is not null)
-                foreach (var g in cur.Groups)
-                    if (!list.Any(x => SpaceIds.Same(x.Computer, g.Computer))) list.Add(g);
-            var next = new RoomLayout(RoomLayout.NextRev(cur, _clock()), Own, list);
-            if (cur is not null && next.SamePlaces(cur)) return;
+            var cur = OutgoingRoom();
+            if (cur is not null && cur.Replacing(groups, cur.Rev, cur.By).SamePlaces(cur)) return; // nothing moved
             _roomUndo = null;
-            WriteLog($"Room: arranged ({list.Count} computers)");
-            SetRoomLayoutLocked(next);
+            WriteLog($"Room: arranged ({groups.Count} computers)");
+            ApplyRoomEdit(groups);
         });
     }
 
@@ -71,82 +65,72 @@ public sealed partial class RoamEngine
             list.Add(new RoomComputer(Own, Own, _platform.Platform, _displays.Select(RoomScreenSpec.From).ToList(), IsSelf: true));
         foreach (var p in _peers.Values.OrderBy(p => p.Id, RoomGeometry.IdOrder))
         {
-            if (p.Link is not { IsOpen: true } || p.Remote is not { Screens.Count: > 0 } r) continue;
+            if (p.Link is not { IsOpen: true } || p.Remote is not { Screens.Count: > 0 } r || IsSelf(p.Id)) continue;
             list.Add(new RoomComputer(p.Id, p.Name, r.Platform, r.Screens.Select(RoomScreenSpec.From).ToList()));
         }
         return list;
     }
 
-    /// <summary>§9.2's side function for auto-place: manualSide or Point setup aims; null when nothing says.</summary>
-    RoamSide? SideBetween(string a, string b)
+    /// <summary>§9.2's side for auto-place, seen from this PC, and whether Point setup or a manual choice says so.</summary>
+    (RoamSide Side, bool Known) RoomSideOf(string peerId)
     {
-        if (IsSelf(a) && PeerFor(b) is { } pb && SideOf(pb, _store.Get(pb.Id)) is var (sb, srcB) && srcB != RoamSideSource.Default) return sb;
-        if (IsSelf(b) && PeerFor(a) is { } pa && SideOf(pa, _store.Get(pa.Id)) is var (sa, srcA) && srcA != RoamSideSource.Default) return RoamSides.Mirror(sa);
-        return RoamLayout.SideOf(_store.Layout, a, b);
+        if (PeerFor(peerId) is not { } p) return (RoamSide.Right, false);
+        var (side, source) = SideOf(p, _store.Get(p.Id));
+        return (side, source is RoamSideSource.Manual or RoamSideSource.PointSetup);
     }
 
-    /// <summary>A peer is reached through the room when both are placed and the room is real: arranged (rev &gt; 0) or the peer knows rooms.</summary>
-    bool UsesRoom(Peer p)
-        => _options.Room && _roomStore.Layout is { } l && l.Has(Own) && l.Has(p.Id) && (l.Rev > 0 || p.SentRoom) && _roomMap.Has(Own) && _roomMap.Has(p.Id);
+    /// <summary>The other computer sent roomLayout on this link and both are placed: crossings use portals.</summary>
+    bool UsesRoom(Peer p) => _options.Room && p.SentRoom && _roomMap.Has(Own) && _roomMap.Has(p.Id);
 
-    /// <summary>Where a placed computer's group sits relative to this PC's.</summary>
+    /// <summary>Where a placed computer's group sits relative to this PC's (by their centres).</summary>
     RoamSide RoomSide(string peerId) => RoomGeometry.SideOf(_roomMap.BoundsOf(Own), _roomMap.BoundsOf(peerId));
 
-    /// <summary>Places computers the layout doesn't have yet, then rebuilds the room map. Called by Recompute.</summary>
+    RoomLayout? OutgoingRoom()
+    {
+        if (_roomStore.Layout is { } stored) return stored;
+        if (_displays.Count == 0 || !_options.Room) return null;
+        return RoomLayout.Make(_roomGroups, 0, Own);
+    }
+
+    /// <summary>Rebuilds the room (stored offsets, auto-place for the rest) and tells every linked computer when the layout changed. Called by Recompute.</summary>
     void RebuildRoom()
     {
         if (!_options.Room) return;
         var computers = Computers();
-        var layout = _roomStore.Layout;
-        var next = layout;
-        if (computers.Count >= 2 && computers.Any(c => c.IsSelf))
-        {
-            var missing = layout is null || computers.Any(c => !layout.Has(c.Id));
-            if (layout is null || layout.Rev == 0)
-            {
-                // No arrangement yet: auto-place (rev 0, any edit wins). Ours replaces another computer's only when it lacks someone.
-                if (missing || SpaceIds.Same(layout!.By, Own))
-                {
-                    var auto = RoomGeometry.AutoPlace(computers, SideBetween, Own);
-                    if (missing || !auto.SamePlaces(layout)) next = auto;
-                }
-            }
-            else if (missing)
-            {
-                // The user arranged it already: the newcomer goes beside, as a small edit (rev + 1) a real one beats.
-                next = RoomGeometry.AddMissing(layout, computers, Own, SideBetween) with { Rev = layout.Rev + 1, By = Own };
-            }
-        }
-        if (next is not null && !ReferenceEquals(next, layout))
-        {
-            _roomStore.SetLayout(next);
-            WriteLog($"Room: placed {next.Groups.Count} computers (rev {next.Rev})");
-            SendRoomToAll(next);
-            After(() => RoomChanged?.Invoke());
-        }
-        if (computers.Count >= 2)
-        {
-            foreach (var c in computers)
-            {
-                if (c.IsSelf || !_roomStore.MarkSeen(c.Id)) continue;
-                var joined = c;
-                After(() => ComputerJoined?.Invoke(joined));
-            }
-        }
-        _roomMap = RoomGeometry.Build(computers, _roomStore.Layout);
-    }
-
-    void SendRoomToAll(RoomLayout layout)
-    {
+        var stored = _roomStore.Layout;
+        var groups = RoomGeometry.AutoPlace(computers, Own, stored?.Groups ?? (IReadOnlyList<RoomGroup>)Array.Empty<RoomGroup>(), RoomSideOf);
+        var changed = !SameGroups(groups, _roomGroups);
+        _roomGroups = groups;
+        _roomMap = RoomGeometry.Build(computers, groups);
+        foreach (var p in _peers.Values) SendRoom(p);
+        if (changed) After(() => RoomChanged?.Invoke());
+        // The first time a computer that speaks the room joins it, "Arrange your desk" opens by itself.
         foreach (var p in _peers.Values)
-            if (p.Link is { IsOpen: true }) Enqueue(p, RoomLayout.Type, layout.ToWire());
+        {
+            if (!p.SentRoom || !_roomMap.Has(p.Id) || !_roomMap.Has(Own) || _roomStore.WasSeen(p.Id)) continue;
+            _roomStore.MarkSeen(p.Id);
+            if (computers.FirstOrDefault(c => SpaceIds.Same(c.Id, p.Id)) is { } joined) After(() => ComputerJoined?.Invoke(joined));
+        }
     }
 
-    /// <summary>Stores a layout this computer made, tells everyone, recomputes the portals.</summary>
-    void SetRoomLayoutLocked(RoomLayout next)
+    static bool SameGroups(IReadOnlyList<RoomGroup> a, IReadOnlyList<RoomGroup> b)
+        => a.Count == b.Count && a.All(g => b.Any(o => SpaceIds.Same(o.Computer, g.Computer) && o.X == g.X && o.Y == g.Y));
+
+    /// <summary>Sends the layout this PC stands by, unless that computer has it already.</summary>
+    void SendRoom(Peer p)
     {
-        _roomStore.SetLayout(next);
-        SendRoomToAll(next);
+        if (p.Link is not { IsOpen: true } || OutgoingRoom() is not { } layout) return;
+        var key = layout.Key;
+        if (key == p.LastSentRoom) return;
+        p.LastSentRoom = key;
+        Enqueue(p, RoomLayout.Type, layout.ToWire());
+    }
+
+    /// <summary>An edit (the Room view, learning, undo, the side picker): a new rev above the current one, by this PC.</summary>
+    void ApplyRoomEdit(IEnumerable<RoomGroup> groups)
+    {
+        var base_ = OutgoingRoom() ?? new RoomLayout(0, Own, Array.Empty<RoomGroup>());
+        _roomStore.SetLayout(base_.Replacing(groups, RoomLayout.NextRev(base_, _clock()), Own));
         Recompute();
         After(() => RoomChanged?.Invoke());
     }
@@ -159,22 +143,14 @@ public sealed partial class RoamEngine
             if (!_peers.TryGetValue(link.PeerId, out var p) || !ReferenceEquals(p.Link, link)) return;
             if (RoomLayout.Parse(data) is not { } incoming) return;
             p.SentRoom = true;
-            var cur = _roomStore.Layout;
-            var same = cur is not null && incoming.Rev == cur.Rev && SpaceIds.Compare(incoming.By, cur.By) == 0 && incoming.SamePlaces(cur);
-            if (!same)
+            p.LastSentRoom = incoming.Key; // they have this one: only a different one goes back
+            if (RoomLayout.Adopt(incoming, OutgoingRoom(), Own))
             {
-                if (RoomLayout.Wins(incoming, cur))
-                {
-                    _roomStore.SetLayout(incoming);
-                    WriteLog($"Room: {p.Name}'s arrangement (rev {incoming.Rev})");
-                    After(() => RoomChanged?.Invoke());
-                }
-                else if (cur is not null)
-                {
-                    Enqueue(p, RoomLayout.Type, cur.ToWire()); // ours wins: say so, so both end up with the same room
-                }
+                _roomStore.SetLayout(incoming);
+                WriteLog($"Room: {p.Name}'s arrangement (rev {incoming.Rev})");
+                After(() => RoomChanged?.Invoke());
             }
-            Recompute();
+            Recompute(); // ours goes back when it won
         });
     }
 
@@ -183,23 +159,23 @@ public sealed partial class RoamEngine
     {
         var c = Computers().FirstOrDefault(x => SpaceIds.Same(x.Id, peerId));
         var own = _roomMap.BoundsOf(Own);
-        if (c is null || own.IsEmpty || _roomStore.Layout is not { } cur) return;
+        if (c is null || own.IsEmpty) return;
         var (gx, gy) = RoomGeometry.NextTo(c, own, side);
-        SetRoomLayoutLocked(cur.WithGroup(c.Id, gx, gy) with { Rev = RoomLayout.NextRev(cur, _clock()), By = Own });
+        ApplyRoomEdit(_roomGroups.Where(g => !SpaceIds.Same(g.Computer, c.Id)).Append(new RoomGroup(c.Id, gx, gy)));
     }
 
-    /// <summary>§10.2 learning: the other computer's group moves so it touches the pushed edge, centred on it.</summary>
-    bool LearnInRoom(RoamSide side, RoamNeighbor peer, string? screenId)
+    /// <summary>§10.2 learning: the other computer's group moves so it touches this PC's group on the pushed side, centred on it.</summary>
+    bool LearnInRoom(RoamSide side, RoamNeighbor peer)
     {
         var c = Computers().FirstOrDefault(x => SpaceIds.Same(x.Id, peer.PeerId));
-        if (c is null || _roomStore.Layout is not { } cur) return false;
-        var edge = screenId is not null && _roomMap.Find(Own, screenId) is { } rs ? rs.Mm : _roomMap.BoundsOf(Own);
-        if (edge.IsEmpty) return false;
-        var (gx, gy) = RoomGeometry.Beside(c, edge, side);
-        _roomUndo = cur;
+        var mine = _roomMap.BoundsOf(Own);
+        if (c is null || mine.IsEmpty) return false;
+        var previous = _roomGroups;
+        var (gx, gy) = RoomGeometry.Touching(c, side, mine);
         _undo = null;
         WriteLog($"Room: {peer.Name} is on the {RoamSides.EdgeWord(side)} now (learned)");
-        SetRoomLayoutLocked(cur.WithGroup(c.Id, gx, gy) with { Rev = RoomLayout.NextRev(cur, _clock()), By = Own });
+        ApplyRoomEdit(previous.Where(g => !SpaceIds.Same(g.Computer, c.Id)).Append(new RoomGroup(c.Id, gx, gy)).ToList());
+        _roomUndo = previous;
         var notice = new RoamLearnedNotice(peer.PeerId, peer.Name, side);
         After(() => SideLearned?.Invoke(notice));
         return true;

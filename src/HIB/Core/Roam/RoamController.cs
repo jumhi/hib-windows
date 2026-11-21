@@ -281,24 +281,32 @@ public sealed class RoamController
         return false;
     }
 
-    /// <summary>The glow for the nearest portal edge of this monitor within 40 points (if nearer than <paramref name="best"/>).</summary>
+    /// <summary>
+    /// The glow for the nearest portal edge of this monitor within 40 points (if nearer than <paramref name="best"/>): the cursor within
+    /// 40 points of the portal along the edge too (the Mac's RoomCursor.glow). It covers only the portal.
+    /// </summary>
     RoamEdgeHint? RoomHint(RoamDisplay display, RoamRect screen, double cx, double cy, double scale, double best)
     {
-        if (_room.Find(_own, display.Id) is not { } rs) return null;
+        if (_room.Find(_own, display.Id) is null) return null;
         RoamEdgeHint? hint = null;
+        var s = display.SafeScale;
         foreach (var side in AllSides)
         {
-            if (LocalContinues(side, screen, cx, cy)) continue;
             var d = DistanceToScreenEdge(side, cx, cy, screen) / scale;
             if (d > RoamGeometry.GlowDistance || d >= best) continue;
-            var at = RoomGeometry.Along(rs, side, cx / display.SafeScale, cy / display.SafeScale);
-            if (_room.PortalAt(_own, display.Id, side, at, IsRoomTarget) is not { } portal || RoomNeighbor(portal.ToComputer) is not { } n) continue;
-            best = d;
-            // The portal's ends on this monitor, in pixels along the edge.
-            var (s0, s1) = RoamSides.IsHorizontal(side)
-                ? (RoomGeometry.ToDips(rs, rs.Mm.X, portal.Start).Y * display.SafeScale, RoomGeometry.ToDips(rs, rs.Mm.X, portal.End).Y * display.SafeScale)
-                : (RoomGeometry.ToDips(rs, portal.Start, rs.Mm.Y).X * display.SafeScale, RoomGeometry.ToDips(rs, portal.End, rs.Mm.Y).X * display.SafeScale);
-            hint = new RoamEdgeHint(side, n.PeerId, n.Name, screen, RoamSides.IsHorizontal(side) ? cy : cx, s0, s1);
+            var along = (RoamSides.IsHorizontal(side) ? cy : cx) / s; // DIPs along the edge
+            foreach (var portal in _room.Portals)
+            {
+                if (portal.Side != side || portal.FromScreen != display.Id || !IsOwn(portal.FromComputer)) continue;
+                if (RoomNeighbor(portal.ToComputer) is not { } n || _room.Segment(portal) is not { } seg) continue;
+                if (along < seg.Start - RoamGeometry.GlowDistance || along > seg.End + RoamGeometry.GlowDistance) continue;
+                var clamped = Math.Clamp(along, seg.Start, seg.End) * s;
+                var (ex, ey) = RoamSides.IsHorizontal(side) ? (side == RoamSide.Left ? screen.X : screen.MaxX, clamped) : (clamped, side == RoamSide.Above ? screen.Y : screen.MaxY);
+                if (LocalContinues(side, screen, ex, ey)) continue;
+                best = d;
+                hint = new RoamEdgeHint(side, n.PeerId, n.Name, screen, RoamSides.IsHorizontal(side) ? cy : cx, seg.Start * s, seg.End * s);
+                break;
+            }
         }
         return hint;
     }
@@ -478,20 +486,12 @@ public sealed class RoamController
         return best.By > 0 ? best.Side : null;
     }
 
-    /// <summary>Coming home through a portal: the entry point on this PC's monitor, in pixels, a little inside its edge.</summary>
+    /// <summary>Coming home through a portal: the entry point (already just inside the edge) on this PC's monitor, in pixels.</summary>
     (double X, double Y) LocalEntry(RoomCrossing c)
     {
         var d = _displays.FirstOrDefault(x => x.Id == c.To.Id) ?? _displays[0];
         var s = d.SafeScale;
-        var inset = RoamGeometry.ReturnInset * s;
-        var (px, py) = d.Pixels.Clamp(c.X * s, c.Y * s);
-        (px, py) = RoamSides.Mirror(c.Portal.Side) switch
-        {
-            RoamSide.Left => (px + inset, py),
-            RoamSide.Right => (px - inset, py),
-            RoamSide.Above => (px, py + inset),
-            _ => (px, py - inset),
-        };
+        var (px, py) = d.Pixels.Clamp(Math.Round(c.X * s), Math.Round(c.Y * s));
         return RoamGeometry.ClampIntoScreens(px, py, _pixels);
     }
 

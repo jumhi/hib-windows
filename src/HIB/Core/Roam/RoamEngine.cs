@@ -77,8 +77,10 @@ public sealed partial class RoamEngine : IDisposable
         public readonly SemaphoreSlim Signal = new(0, 1);
         public CancellationTokenSource? Pump;
         public DateTime LastPing;
-        /// <summary>It sent roomLayout on this link (it knows the room, §10.2).</summary>
+        /// <summary>It sent roomLayout on this link (it speaks the room, §10.2).</summary>
         public bool SentRoom;
+        /// <summary>The layout it has from us (or sent us): only a different one goes out.</summary>
+        public string? LastSentRoom;
     }
 
     readonly SpaceEngine _space;
@@ -234,8 +236,7 @@ public sealed partial class RoamEngine : IDisposable
             if (_roomUndo is { } ru)
             {
                 _roomUndo = null;
-                var cur = _roomStore.Layout;
-                SetRoomLayoutLocked(ru with { Rev = RoomLayout.NextRev(cur, _clock()), By = Own });
+                ApplyRoomEdit(ru);
                 return;
             }
             if (_undo is not { } u) return;
@@ -374,6 +375,7 @@ public sealed partial class RoamEngine : IDisposable
             p.LastRemoteManual = null;
             p.LastRemoteCmd = null;
             p.SentRoom = false;
+            p.LastSentRoom = null; // §10.2: the room goes out on every peer hello
             p.Outbox.Clear();
             p.Pump = new CancellationTokenSource();
             var ct = p.Pump.Token;
@@ -381,9 +383,7 @@ public sealed partial class RoamEngine : IDisposable
             link.MessageReceived += OnPeerMessage;
             link.PongReceived += OnPong;
             SendHello(p);
-            // §10.2: the room on every peer hello.
-            if (_options.Room && _roomStore.Layout is { } room) Enqueue(p, RoomLayout.Type, room.ToWire());
-            Recompute();
+            Recompute(); // sends the room (§10.2) right after the hello
         });
     }
 
@@ -399,6 +399,8 @@ public sealed partial class RoamEngine : IDisposable
             StopPump(p);
             p.Link = null;
             p.Remote = null;
+            p.SentRoom = false;
+            p.LastSentRoom = null;
             p.Outbox.Clear();
             Recompute();
         });
@@ -793,7 +795,7 @@ public sealed partial class RoamEngine : IDisposable
 
         public void Learned(RoamSide side, RoamNeighbor peer, string? screenId)
         {
-            if (peer.InRoom && _e.LearnInRoom(side, peer, screenId)) return;
+            if (peer.InRoom && _e.LearnInRoom(side, peer)) return;
             var before = _e._store.Get(peer.PeerId);
             _e._undo = (peer.PeerId, before.ManualSide);
             _e._store.Set(peer.PeerId, before with { ManualSide = RoamSides.Wire(side) });

@@ -50,12 +50,12 @@ public sealed record CtlHello(bool Enabled, string Platform, IReadOnlyList<RoamS
                 ["h"] = Round(s.H),
                 // §10.1
                 ["name"] = s.Name,
-                ["mmW"] = Math.Round(s.MmW, 1),
-                ["mmH"] = Math.Round(s.MmH, 1),
+                ["mmW"] = (int)Math.Round(s.MmW, MidpointRounding.AwayFromZero),
+                ["mmH"] = (int)Math.Round(s.MmH, MidpointRounding.AwayFromZero),
                 ["builtIn"] = s.BuiltIn,
                 ["pxW"] = s.PxW > 0 ? s.PxW : (int)Math.Round(s.W * s.Scale),
                 ["pxH"] = s.PxH > 0 ? s.PxH : (int)Math.Round(s.H * s.Scale),
-                ["scale"] = Math.Round(s.Scale > 0 ? s.Scale : 1, 3),
+                ["scale"] = Math.Round(s.Scale > 0 ? s.Scale : 1, 2),
             });
         return new JsonObject
         {

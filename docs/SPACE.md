@@ -593,6 +593,26 @@ offset) and that arrangement is what Roam's cursor follows, edge segment by edge
   p, clamped into the overlap, then converted to b's desktop coordinates. Corners: § 9.2 rule.
 - With a room layout, portals replace the §9.2 whole-desktop edges: 3 or 4 computers, above/below and
   partial overlaps all work. Without one, §9.2 stays as is.
+- Settled details (both apps, so both compute identical portals):
+  - A group's offset (x, y) is the room position of that computer's desktop origin (0, 0). The primary
+    screen is the one whose origin is (0, 0), else the first listed; mm per point/DIP = its `mmW` / its
+    width (0.25 when unknown); each other screen sits at its OS position × that factor, at its own size.
+  - Points convert desktop ↔ room linearly inside each screen's own two rectangles.
+  - The cursor crosses only inside a portal's overlap (the clamp only guards the ends) and enters 1
+    point/DIP inside the other screen's edge. Several portals at one point: the smallest |gap|, then the
+    longest overlap, then the lower computer id (UTF-8 bytes), then the lower screen index.
+  - Offsets and mm are whole numbers on the wire (rounded half away from zero). An edit's
+    `rev` = max(now ms, current rev + 1).
+  - The same author's same-`rev` layout with other groups replaces the older one (an auto layout re-sent
+    after another computer joined); a computer never adopts an older copy of its own layout.
+  - Portals are used only with computers that sent `roomLayout` on the current link; with others, §9.2.
+  - With nothing stored, each computer stands by its own auto layout (rev 0) and sends it; computers the
+    stored layout doesn't place are auto-placed around this computer (left/right on its desk line,
+    above/below centred on it). Nothing known at all: the Mac first, the others to its right, bottoms on
+    y = 0.
+  - Implausible sizes are sent as 0 at the source: each axis must be 0.05–1.5 mm per point/DIP and the two
+    within 1.5× of each other (an aspect-only EDID, a TV claiming metres → 0).
+  - Learning puts the other group touching this computer's whole group on the pushed side, centred.
 
 ### 10.4 Room view (Mac and Windows; same look)
 - Opens from the Devices tab ("Arrange") and **by itself the first time a new computer joins** ("Arrange
