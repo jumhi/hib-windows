@@ -509,6 +509,18 @@ All coordinates are the **target's** desktop coordinates (points/DIPs, y down �
   inverse (Ctrl → ⌘, Win → Control, Alt → Option). Off = plain (⌘ ↔ Win, Control ↔ Ctrl).
 - Media keys (volume, play/pause, next/previous, mute, brightness where possible) map to the target's.
 - Order is preserved (one TCP connection; `TCP_NODELAY` on peer sockets). Never coalesce keys/buttons.
+- Settled details (both apps):
+  - `manualSide` is the sender's view ("where the other computer is, from me"); the receiver mirrors it.
+    If both set different sides before linking, the lower peer id (UTF-8 bytes) wins.
+  - `cmdAsCtrl` is one shared setting for the pair; either side changing it sends `ctlHello`.
+  - Media keys: mute / volume up / volume down = keyboard usages 0x7F / 0x80 / 0x81; play-pause, next,
+    previous, stop = consumer usages encoded as 0x000C00CD / 0x000C00B5 / 0x000C00B6 / 0x000C00B7 in
+    `usage`. Brightness is dropped when the target is Windows.
+  - `ctlWheel`: dy > 0 scrolls up/away, dx > 0 scrolls right.
+  - A target answers `ctlEnter` with `ctlRelease` when Roam is off there or it's busy controlling.
+  - A computer that can't capture or inject (e.g. no Accessibility grant) sends `enabled:false`.
+  - During a drag ghost the target never injects the left button; the drop is `ctlButton` up, then
+    the controller's `flickStart` with `at`.
 
 ### 9.4 Clipboard on crossing
 - `ctlEnter` and `ctlLeave` carry the sender's clipboard text if it changed since the last crossing
