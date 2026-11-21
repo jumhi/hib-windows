@@ -42,6 +42,10 @@ You need: a Windows 10/11 PC and an Android phone (Android 11+), on the same Wi-
 - **Devices:** send files and text between the phone and every computer
 - **One mouse and keyboard for your computers:** push the cursor off the edge toward your other computer
   and keep working there, typing included; drag files across the edge
+- **Your desk, drawn for real:** every display at its true size and shape (an ultrawide is a long bar, a
+  MacBook is a laptop); drag computers into place and the mouse follows that arrangement
+- **Point to act:** point the phone at a computer and the Desk Deck, Remote, Scenes and media controls
+  work there
 - Phone screen mirroring, phone apps in their own windows, phone audio on the PC (scrcpy)
 - Find My phone, ring the phone, Phone Agent
 
