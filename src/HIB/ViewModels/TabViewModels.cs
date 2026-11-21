@@ -266,8 +266,23 @@ public sealed partial class DeviceCardViewModel : ObservableObject
         { SideSource: HIB.Core.Roam.RoamSideSource.PointSetup, Side: HIB.Core.Roam.RoamSide.Above } => "Above this PC · from Point setup",
         { SideSource: HIB.Core.Roam.RoamSideSource.PointSetup, Side: HIB.Core.Roam.RoamSide.Below } => "Below this PC · from Point setup",
         { SideSource: HIB.Core.Roam.RoamSideSource.PointSetup } => "Side · from Point setup",
+        { SideSource: HIB.Core.Roam.RoamSideSource.Room, Side: var s } => $"{RoomSideWord(s)} this PC · from your desk",
         _ => "Side · set by you",
     };
+
+    static string RoomSideWord(HIB.Core.Roam.RoamSide s) => s switch
+    {
+        HIB.Core.Roam.RoamSide.Left => "Left of",
+        HIB.Core.Roam.RoamSide.Right => "Right of",
+        HIB.Core.Roam.RoamSide.Above => "Above",
+        _ => "Below",
+    };
+
+    /// <summary>With a room the desk decides; the ← / → picker gives way to "Arrange".</summary>
+    public bool RoamInRoom => Roam is { SideSource: HIB.Core.Roam.RoamSideSource.Room };
+    public bool RoamShowsPicker => !RoamInRoom;
+
+    [RelayCommand] void Arrange() => _owner.App.Room.Show();
 
     public string RoamStatus => Roam?.Status ?? "";
     public bool RoamActive => Roam is { Role: not HIB.Core.Roam.RoamRole.None };
@@ -356,6 +371,7 @@ public partial class DevicesViewModel : ViewModelBase
         ThisPc.Update(ThisDevice());
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(Summary));
+        OnPropertyChanged(nameof(CanArrange));
     }
 
     internal void Ring()
@@ -382,4 +398,10 @@ public partial class DevicesViewModel : ViewModelBase
     }
 
     [RelayCommand] void OpenPair() => App.Navigate?.Invoke("pair");
+
+    /// <summary>"Arrange": the Room view, your desk with every computer's displays (SPACE.md §10.4).</summary>
+    [RelayCommand] void Arrange() => App.Room.Show();
+
+    /// <summary>Arrange shows once there is another computer to place.</summary>
+    public bool CanArrange => Devices.Any(d => d.IsComputer);
 }

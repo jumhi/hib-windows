@@ -322,6 +322,18 @@ public class DesignShotsTests
         host.Close();
         light.FadeOutAndClose();
 
+        // SPACE.md §11.2: pointing with Desk Deck open, the pill says what the phone does.
+        var deckLight = new HIB.Views.Flick.AimLightWindow(@"\\.\DISPLAY1");
+        deckLight.SetRenderScaling(2);
+        deckLight.SetLabel("Desk Deck");
+        deckLight.ShowOn(screen);
+        await Pump(300);
+        Assert.Equal("Desk Deck", deckLight.LabelText);
+        host = await OnDesktop(deckLight, deckLight.Area);
+        SaveShot(Capture(host), "windows-aim-light-deck");
+        host.Close();
+        deckLight.FadeOutAndClose();
+
         // Point setup's target, part filled, then captured (lime ring and check).
         var display = new HIB.Core.Phone.DisplayScreen(@"\\.\DISPLAY1", "Display 1", true, 0, 0, 1440, 900);
         var target = new HIB.Views.Flick.PointTargetWindow(@"\\.\DISPLAY1");

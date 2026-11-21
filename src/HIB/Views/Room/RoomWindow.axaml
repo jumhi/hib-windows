@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:HIB.Views.Controls"
+        xmlns:vm="using:HIB.ViewModels"
+        xmlns:room="using:HIB.Views.Room"
+        x:Class="HIB.Views.Room.RoomWindow"
+        Title="Your desk"
+        Width="1040" Height="660" MinWidth="760" MinHeight="520"
+        Background="{StaticResource HibInk}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="36"
+        WindowStartupLocation="CenterScreen">
+
+  <!-- docs/SPACE.md §10.4 "Your desk", the same look as the Mac's RoomView: ink/midnight ambient, a glass panel
+       holding the desk, cyan for where the mouse crosses, lime for this PC, amber for a computer touching nothing. -->
+  <Window.Styles>
+    <Style Selector="Button.pill">
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="20,8"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="MinWidth" Value="76"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.ghost">
+      <Setter Property="Background" Value="#1A20D9FF"/>
+      <Setter Property="BorderBrush" Value="#5920D9FF"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2E20D9FF"/>
+      <Setter Property="BorderBrush" Value="#8C20D9FF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <Style Selector="Button.ghost:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#3820D9FF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <Style Selector="Button.primary.pill /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="0 0 16 0 #5920D9FF"/>
+    </Style>
+  </Window.Styles>
+
+  <Panel>
+    <c:AmbientBackground ShowLavender="False"/>
+    <Border x:Name="TitleStrip" Height="36" VerticalAlignment="Top" Background="Transparent"/>
+
+    <Grid Margin="26,34,26,18" RowDefinitions="Auto,*,Auto">
+      <!-- header -->
+      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+        <StackPanel Spacing="4">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="ARRANGE YOUR DESK" Classes="label" VerticalAlignment="Center"/>
+            <Border x:Name="JoinedChip" Classes="chip lime" IsVisible="False" Padding="9,3">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{x:Static vm:Icons.Sparkles}" Size="12" Foreground="{StaticResource HibLime}" StrokeThickness="2.2"/>
+                <TextBlock x:Name="JoinedText" Foreground="{StaticResource HibLime}" FontSize="11.5" FontWeight="SemiBold"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <TextBlock Text="Your desk" FontSize="26" FontWeight="Bold"/>
+          <TextBlock Text="Drag your computers to where they really are" FontSize="13.5" Foreground="#9EFFFFFF"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
+          <Button x:Name="CancelButton" Classes="pill ghost" Content="Cancel"/>
+          <Button x:Name="DoneButton" Classes="pill primary" Content="Done"/>
+        </StackPanel>
+      </Grid>
+
+      <!-- the desk -->
+      <Border Grid.Row="1" Classes="panel" CornerRadius="22" ClipToBounds="True">
+        <Panel>
+          <room:RoomCanvas x:Name="Canvas"/>
+          <StackPanel x:Name="PhonesColumn" Width="172" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,18,0">
+            <TextBlock Text="ALSO IN YOUR SPACE" Classes="label" FontSize="9"/>
+            <StackPanel x:Name="PhonesList" Spacing="8"/>
+          </StackPanel>
+        </Panel>
+      </Border>
+
+      <!-- footer -->
+      <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="0,14,0,0">
+        <Border Width="18" Height="3" CornerRadius="1.5" Background="{StaticResource HibCyan}" VerticalAlignment="Center"
+                BoxShadow="0 0 8 0 #E620D9FF" Margin="0,0,10,0"/>
+        <TextBlock Grid.Column="1" Text="Glowing lines are where the pointer crosses from one computer to the next."
+                   FontSize="12" Foreground="#9EFFFFFF" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Grid.Column="2" Text="Edges snap within 4 cm · changes apply right away" FontSize="12" Foreground="#66FFFFFF"
+                   VerticalAlignment="Center" Margin="16,0,0,0"/>
+      </Grid>
+    </Grid>
+  </Panel>
+</Window>

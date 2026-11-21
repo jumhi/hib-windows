@@ -653,3 +653,13 @@ Whatever the phone points at receives what the phone does — not only Flick.
   it; anything unsupported answers `deckActionResult{ok:false,error:"Not available on Windows"}`.
 - `remoteControl` (Mac: WebSocketServer+Handlers.swift, MacRemoteManager) — keys, arrows, text → SendInput.
 - `macMediaControl` (play/pause, next, previous, volume) → media keys / system volume.
+- Windows details (settled): `deckState` carries the Mac's fields except `nextEvent` (no calendar);
+  `memPressure` is "warning" from 85 % memory in use and "critical" from 95 %; `screenshot` = Win+PrintScreen
+  (saved like ⌘⇧3); `screensaver` starts the screensaver when one is set, else turns the displays off;
+  `mic_mute` toggles the default microphone's mute (console and communications); `brightness_*` steps DDC/CI
+  monitors 10 %, else a laptop panel through WMI, else `ok:false` "This PC's display doesn't allow brightness
+  control"; `vol_*` are the volume keys (Windows' own flyout) and `macVolume` follows 0.5 s later like the
+  Mac; in `remoteControl` the phone's `cmd`/`command` and `ctrl`/`control` modifiers (and the ⌘/Control
+  keycodes) are Ctrl, `option`/`alt` is Alt; macOS keycodes are translated to physical keys, so the PC's own
+  layout applies; `macMediaControl` play/pause/playPause all toggle (Windows has one play/pause key) and
+  answer `macMediaControlResponse`.

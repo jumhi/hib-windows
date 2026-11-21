@@ -25,7 +25,8 @@ public sealed class TestHost : IAsyncDisposable
     static int _nextPort = int.TryParse(Environment.GetEnvironmentVariable("HIB_PORT"), out var p) ? p : 16996;
 
     public TestHost(TimeSpan? pingInterval = null, TimeSpan? activityTimeout = null, string? name = null,
-        HIB.Core.Space.SpaceOptions? space = null, string? root = null, HIB.Core.Roam.RoamOptions? roam = null)
+        HIB.Core.Space.SpaceOptions? space = null, string? root = null, HIB.Core.Roam.RoamOptions? roam = null,
+        Func<HIB.Core.Act.IDesktopControl>? desktop = null, Func<HIB.Core.Act.ISystemStats>? stats = null, TimeSpan? deckInterval = null)
     {
         Root = root ?? Path.Combine(Path.GetTempPath(), "hib-tests", Guid.NewGuid().ToString("N")[..8]);
         Downloads = Path.Combine(Root, "Downloads");
@@ -42,6 +43,10 @@ public sealed class TestHost : IAsyncDisposable
             Space = space ?? new HIB.Core.Space.SpaceOptions(),
             // Tests never capture or inject real input.
             Roam = roam ?? new HIB.Core.Roam.RoamOptions { Platform = () => new HIB.Core.Roam.NullRoamPlatform() },
+            // …nor press keys, lock the screen or change the volume (Point to act, SPACE.md §11.3).
+            Desktop = desktop ?? (() => new HIB.Core.Act.NullDesktopControl()),
+            Stats = stats ?? (() => new HIB.Core.Act.SystemStats()),
+            DeckInterval = deckInterval,
         });
         Core.Settings.DesktopName = name ?? "Haitham’s PC & Co?=x+y";
         Core.Settings.Save();

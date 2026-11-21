@@ -21,10 +21,16 @@ public sealed class AmbientBackground : Control
 
     public bool ShowGrid { get => GetValue(ShowGridProperty); set => SetValue(ShowGridProperty, value); }
 
+    /// <summary>The lavender light bottom-left (off in the Room view: navy, cyan and lime only).</summary>
+    public static readonly StyledProperty<bool> ShowLavenderProperty =
+        AvaloniaProperty.Register<AmbientBackground, bool>(nameof(ShowLavender), true);
+
+    public bool ShowLavender { get => GetValue(ShowLavenderProperty); set => SetValue(ShowLavenderProperty, value); }
+
     static AmbientBackground()
     {
         IsHitTestVisibleProperty.OverrideDefaultValue<AmbientBackground>(false);
-        AffectsRender<AmbientBackground>(ShowGridProperty);
+        AffectsRender<AmbientBackground>(ShowGridProperty, ShowLavenderProperty);
     }
 
     StreamGeometry? _grid;
@@ -46,7 +52,8 @@ public sealed class AmbientBackground : Control
 
         // SwiftUI: Circle(width: w*0.62).blur(90).offset(+0.34w, -0.42h) and Circle(width: w*0.52).blur(110).offset(-0.42w, +0.34h)
         Glow(context, new Point(w * 0.84, h * 0.08), w * 0.31, 90, Cyan, 0.18);
-        Glow(context, new Point(w * 0.08, h * 0.84), w * 0.26, 110, Lavender, 0.11);
+        if (ShowLavender) Glow(context, new Point(w * 0.08, h * 0.84), w * 0.26, 110, Lavender, 0.11);
+        else Glow(context, new Point(w * 0.08, h * 0.84), w * 0.26, 110, Cyan, 0.06);
 
         if (ShowGrid)
         {

@@ -38,6 +38,8 @@ public sealed class AppController
         Roam = new RoamHost(this);
         // Point & Flick: screensInfo to the phone, the aim light and the point target (SPACE.md §7).
         Point = new PointFlickHost(this);
+        // Room: "Your desk" from the Devices tab, and by itself when a new computer joins (SPACE.md §10.4).
+        Room = new RoomPresenter(this, autoOpen: lifetime is not null);
 
         core.Link.ConnectionChanged += (_, connected) =>
         {
@@ -84,6 +86,7 @@ public sealed class AppController
     public FlickPresenter Flick { get; }
     public PointFlickHost Point { get; }
     public RoamHost Roam { get; }
+    public RoomPresenter Room { get; }
     public HIB.Views.Flick.FlickCardManager Cards { get; }
     public SpaceUiHost? SpaceUi { get; }
     public Window? MainWindow => WindowOverride ?? _lifetime?.MainWindow;
