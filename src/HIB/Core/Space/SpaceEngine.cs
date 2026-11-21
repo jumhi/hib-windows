@@ -194,6 +194,9 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
 
     public override bool CanPlayHere => _audio?.CanStart == true;
 
+    /// <summary>The phone-audio player the app attached (scrcpy), or null.</summary>
+    public IPhoneAudioPlayer? Audio => _audio;
+
     bool IsSelf(string id)
         => string.Equals(id, ThisDeviceName, StringComparison.OrdinalIgnoreCase)
            || (_list.You is { Length: > 0 } you && SpaceIds.Same(id, you));

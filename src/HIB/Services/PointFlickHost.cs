@@ -59,7 +59,11 @@ public sealed class PointFlickHost : IDisposable
         if (live is not null) live.Changed += OnScreensChanged;
     }
 
-    void OnScreensChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(PublishScreens);
+    void OnScreensChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
+    {
+        _app.Screens.RefreshDetails(); // a monitor swapped on the same port keeps its bounds but not its name
+        PublishScreens();
+    });
 
     // The overlays follow the core's current state, so posts that arrive late or out of order can't leave a stale one.
 
@@ -74,13 +78,16 @@ public sealed class PointFlickHost : IDisposable
         }
         var screen = _app.Screens.Find(lit.Id) ?? _app.Screens.Primary;
         if (screen is null) return;
+        var label = _app.Core.Aim.LitLabel;
         if (_light is { IsFadingOut: false, IsClosed: false } current && current.ScreenId == lit.Id)
         {
+            current.SetLabel(label);
             current.Place(screen); // same screen; its bounds may have changed
             return;
         }
         _light?.FadeOutAndClose();
         _light = new AimLightWindow(lit.Id);
+        _light.SetLabel(label);
         _light.ShowOn(screen);
     }
 

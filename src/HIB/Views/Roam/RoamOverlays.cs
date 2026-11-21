@@ -36,6 +36,7 @@ public sealed class RoamEdgeWindow : OverlayWindow
     readonly TextBlock _text;
     double _along;
     double _length;
+    double _segStart, _segEnd;
 
     public RoamEdgeWindow(RoamSide side, string screenId) : base("Roam edge", screenId)
     {
@@ -144,18 +145,33 @@ public sealed class RoamEdgeWindow : OverlayWindow
         }
     }
 
-    /// <summary>Shows <paramref name="pillText"/> beside the edge at <paramref name="along"/> DIPs.</summary>
-    public void Update(string pillText, double along)
+    /// <summary>
+    /// Shows <paramref name="pillText"/> beside the edge at <paramref name="along"/> DIPs. With a room (SPACE.md §10.3) the glow covers
+    /// only the portal, <paramref name="segStart"/>…<paramref name="segEnd"/> DIPs along the edge (both 0: the whole edge).
+    /// </summary>
+    public void Update(string pillText, double along, double segStart = 0, double segEnd = 0)
     {
         _text.Text = pillText;
         _along = along;
+        _segStart = segStart;
+        _segEnd = segEnd;
         Layout();
     }
+
+    /// <summary>The lit part of the edge (DIPs along it).</summary>
+    public (double Start, double End) Segment => _segEnd > _segStart ? (_segStart, _segEnd) : (0, _length > 0 ? _length : 800);
 
     void Layout()
     {
         var len = _length > 0 ? _length : 800;
-        var pos = Math.Clamp(_along, PillHeight, Math.Max(PillHeight, len - PillHeight));
+        var (s0, s1) = _segEnd > _segStart ? (Math.Clamp(_segStart, 0, len), Math.Clamp(_segEnd, 0, len)) : (0, len);
+        var tail = Math.Max(0, len - s1);
+        var seg = RoamSides.IsHorizontal(Side) ? new Thickness(0, s0, 0, tail) : new Thickness(s0, 0, tail, 0);
+        _wash.Margin = seg;
+        _line.Margin = seg;
+        var lo = Math.Max(PillHeight, s0 + PillHeight / 2);
+        var hi = Math.Min(len - PillHeight, s1 - PillHeight / 2);
+        var pos = hi >= lo ? Math.Clamp(_along, lo, hi) : (s0 + s1) / 2;
         const double hotLength = 260;
         switch (Side)
         {

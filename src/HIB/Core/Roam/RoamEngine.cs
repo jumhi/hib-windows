@@ -25,6 +25,8 @@ public sealed class RoamOptions
     public TimeSpan Tick { get; set; } = TimeSpan.FromMilliseconds(100);
     /// <summary>The most a crossing waits for the clipboard.</summary>
     public TimeSpan ClipboardTimeout { get; set; } = TimeSpan.FromMilliseconds(250);
+    /// <summary>The room (SPACE.md §10): roomLayout and portals. Off = §9.2 only, like an older H.I.B (tests of the §9.2 path).</summary>
+    public bool Room { get; set; } = true;
 }
 
 public static class RoamPlatforms
@@ -41,7 +43,8 @@ public static class RoamPlatforms
     }
 }
 
-public enum RoamSideSource { Default, PointSetup, Manual }
+/// <summary>Where a computer's side comes from. <see cref="Room"/>: the room (SPACE.md §10) places it.</summary>
+public enum RoamSideSource { Default, PointSetup, Manual, Room }
 
 public enum RoamRole { None, Controlling, Controlled }
 
@@ -58,7 +61,7 @@ public sealed record RoamGhost(string Id, string Name, int Count, double X, doub
 /// <summary>A side learned from dead-edge pushes ("&lt;name&gt; is on this side now · Undo").</summary>
 public sealed record RoamLearnedNotice(string PeerId, string Name, RoamSide Side);
 
-public sealed class RoamEngine : IDisposable
+public sealed partial class RoamEngine : IDisposable
 {
     sealed class Peer
     {
@@ -74,6 +77,8 @@ public sealed class RoamEngine : IDisposable
         public readonly SemaphoreSlim Signal = new(0, 1);
         public CancellationTokenSource? Pump;
         public DateTime LastPing;
+        /// <summary>It sent roomLayout on this link (it knows the room, §10.2).</summary>
+        public bool SentRoom;
     }
 
     readonly SpaceEngine _space;
@@ -105,6 +110,7 @@ public sealed class RoamEngine : IDisposable
         _options = options ?? new RoamOptions();
         _clock = _options.Clock ?? (() => DateTime.UtcNow);
         _store = new RoamStore(dataDir);
+        _roomStore = new RoomStore(dataDir);
         _platform = _options.Platform();
         _controller = new RoamController(new Host(this), _clock) { LocalPlatform = _platform.Platform };
         _timer = new Timer(_ => OnTick(), null, Timeout.Infinite, Timeout.Infinite);
@@ -214,6 +220,8 @@ public sealed class RoamEngine : IDisposable
     public void SetSide(string peerId, RoamSide side) => Change(peerId, s => s with { ManualSide = RoamSides.Wire(side) }, p =>
     {
         if (_undo is { } u && SpaceIds.Same(u.PeerId, p.Id)) _undo = null;
+        // With a room, the choice moves that computer's group beside this PC (§10).
+        if (UsesRoom(p)) MoveGroupNextTo(p.Id, side);
     });
 
     public void SetCmdAsCtrl(string peerId, bool on) => Change(peerId, s => s with { CmdAsCtrl = on }, null);
@@ -223,6 +231,13 @@ public sealed class RoamEngine : IDisposable
     {
         Locked(() =>
         {
+            if (_roomUndo is { } ru)
+            {
+                _roomUndo = null;
+                var cur = _roomStore.Layout;
+                SetRoomLayoutLocked(ru with { Rev = RoomLayout.NextRev(cur, _clock()), By = Own });
+                return;
+            }
             if (_undo is not { } u) return;
             _undo = null;
             _store.Set(u.PeerId, _store.Get(u.PeerId) with { ManualSide = u.Previous });
@@ -248,9 +263,10 @@ public sealed class RoamEngine : IDisposable
     RoamPeerStatus Status(Peer p)
     {
         var s = _store.Get(p.Id);
-        var (side, source) = SideOf(p, s);
+        var room = UsesRoom(p);
+        var (side, source) = room ? (RoomSide(p.Id), RoamSideSource.Room) : SideOf(p, s);
         var layout = _store.Layout;
-        var needsAsk = s.ManualSide is null && !(RoamLayout.HasAims(layout, Own) && RoamLayout.HasAims(layout, p.Id));
+        var needsAsk = !room && s.ManualSide is null && !(RoamLayout.HasAims(layout, Own) && RoamLayout.HasAims(layout, p.Id));
         var linked = p.Link is { IsOpen: true };
         var role = _controller.Target is { } t && SpaceIds.Same(t.PeerId, p.Id) ? RoamRole.Controlling
             : _controlledBy is { } by && SpaceIds.Same(by, p.Id) ? RoamRole.Controlled : RoamRole.None;
@@ -264,6 +280,7 @@ public sealed class RoamEngine : IDisposable
         else if (role == RoamRole.Controlling) text = $"Using {p.Name} · come back across its {RoamSides.EdgeWord(RoamSides.Mirror(side))} edge";
         else if (role == RoamRole.Controlled) text = $"{p.Name} is using this PC";
         else if (_displays.Count == 0 || p.Remote.Screens.Count == 0) text = "Getting the screens ready…";
+        else if (room && !_roomMap.Touches(Own, p.Id)) text = $"{p.Name} isn't next to this PC on your desk · Arrange to connect them";
         else text = $"Move the cursor off the {RoamSides.EdgeWord(side)} edge to go to {p.Name}";
         return new RoamPeerStatus(p.Id, p.Name, p.Platform, linked, s.Enabled, p.Remote?.Enabled ?? false, p.Remote is not null,
             side, source, needsAsk, s.CmdAsCtrl, ready, role, text);
@@ -284,15 +301,28 @@ public sealed class RoamEngine : IDisposable
     /// <summary>Recomputes the neighbours and the platform mode (under the lock).</summary>
     void Recompute()
     {
+        RebuildRoom();
         var neighbors = new List<RoamNeighbor>();
+        var inRoom = new List<string>();
         foreach (var p in _peers.Values)
         {
             var s = _store.Get(p.Id);
             if (!IsReady(p, s)) continue;
+            var screens = p.Remote!.Screens.Select(x => x.Rect).ToList();
+            if (UsesRoom(p))
+            {
+                // §10.3: reached through the room's portals; the side is only where its group sits.
+                neighbors.Add(new RoamNeighbor(p.Id, p.Name, RoomSide(p.Id), screens, p.Platform, s.CmdAsCtrl, InRoom: true));
+                inRoom.Add(p.Id);
+                continue;
+            }
             var (side, _) = SideOf(p, s);
-            if (neighbors.Any(n => n.Side == side)) continue;
-            neighbors.Add(new RoamNeighbor(p.Id, p.Name, side, p.Remote!.Screens.Select(x => x.Rect).ToList(), p.Platform, s.CmdAsCtrl));
+            if (neighbors.Any(n => !n.InRoom && n.Side == side)) continue;
+            neighbors.Add(new RoamNeighbor(p.Id, p.Name, side, screens, p.Platform, s.CmdAsCtrl));
         }
+        // The controller's room: this PC and the ready computers placed with it.
+        _controller.SetRoom(inRoom.Count == 0 ? RoomMap.Empty
+            : new RoomMap(_roomMap.Screens.Where(x => IsSelf(x.Computer) || inRoom.Any(id => SpaceIds.Same(id, x.Computer)))), Own);
         _controller.SetNeighbors(neighbors);
         UpdateMode();
         After(() => Changed?.Invoke());
@@ -343,6 +373,7 @@ public sealed class RoamEngine : IDisposable
             p.GotHello = false;
             p.LastRemoteManual = null;
             p.LastRemoteCmd = null;
+            p.SentRoom = false;
             p.Outbox.Clear();
             p.Pump = new CancellationTokenSource();
             var ct = p.Pump.Token;
@@ -350,6 +381,8 @@ public sealed class RoamEngine : IDisposable
             link.MessageReceived += OnPeerMessage;
             link.PongReceived += OnPong;
             SendHello(p);
+            // §10.2: the room on every peer hello.
+            if (_options.Room && _roomStore.Layout is { } room) Enqueue(p, RoomLayout.Type, room.ToWire());
             Recompute();
         });
     }
@@ -399,7 +432,16 @@ public sealed class RoamEngine : IDisposable
         var screens = _displays.Select(d =>
         {
             var r = d.Dips;
-            return new RoamScreen(d.Id, r.X, r.Y, r.W, r.H);
+            return new RoamScreen(d.Id, r.X, r.Y, r.W, r.H)
+            {
+                Name = d.Name,
+                MmW = d.MmW,
+                MmH = d.MmH,
+                BuiltIn = d.BuiltIn,
+                PxW = (int)Math.Round(d.Pixels.W),
+                PxH = (int)Math.Round(d.Pixels.H),
+                Scale = d.SafeScale,
+            };
         }).ToList();
         var hello = new CtlHello(s.Enabled && _platform.IsAvailable, _platform.Platform, screens, RoamSides.Parse(s.ManualSide), s.CmdAsCtrl);
         Enqueue(p, RoamWire.Hello, hello.ToWire());
@@ -442,6 +484,11 @@ public sealed class RoamEngine : IDisposable
 
     void OnPeerMessage(object? sender, LinkMessageEventArgs e)
     {
+        if (sender is PeerLink roomLink && e.Type == RoomLayout.Type)
+        {
+            OnRoomLayout(roomLink, e.Data);
+            return;
+        }
         if (sender is not PeerLink link || !e.Type.StartsWith("ctl", StringComparison.Ordinal)) return;
         Locked(() =>
         {
@@ -744,8 +791,9 @@ public sealed class RoamEngine : IDisposable
 
         public void FinishLocalDrag(bool cancel) => _e._platform.FinishParkedDrag(cancel);
 
-        public void Learned(RoamSide side, RoamNeighbor peer)
+        public void Learned(RoamSide side, RoamNeighbor peer, string? screenId)
         {
+            if (peer.InRoom && _e.LearnInRoom(side, peer, screenId)) return;
             var before = _e._store.Get(peer.PeerId);
             _e._undo = (peer.PeerId, before.ManualSide);
             _e._store.Set(peer.PeerId, before with { ManualSide = RoamSides.Wire(side) });

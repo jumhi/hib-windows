@@ -112,13 +112,26 @@ public readonly record struct RoamRect(double X, double Y, double W, double H)
 /// <summary>One monitor of this PC: its Point &amp; Flick id, physical pixels and scale (DIPs = pixels / scale, like screensInfo).</summary>
 public sealed record RoamDisplay(string Id, RoamRect Pixels, double Scale, bool Primary = false)
 {
+    /// <summary>§10.1: the monitor's friendly name, physical size (0 = unknown) and whether it is the laptop's panel.</summary>
+    public string Name { get; init; } = "";
+    public double MmW { get; init; }
+    public double MmH { get; init; }
+    public bool BuiltIn { get; init; }
     public double SafeScale => Scale > 0 ? Scale : 1;
     public RoamRect Dips => new(Pixels.X / SafeScale, Pixels.Y / SafeScale, Pixels.W / SafeScale, Pixels.H / SafeScale);
 }
 
-/// <summary>A screen as ctlHello describes it (points/DIPs, y down).</summary>
+/// <summary>A screen as ctlHello describes it (points/DIPs, y down), with §10.1's name, millimetres, native pixels and scale.</summary>
 public sealed record RoamScreen(string Id, double X, double Y, double W, double H)
 {
+    public string Name { get; init; } = "";
+    public double MmW { get; init; }
+    public double MmH { get; init; }
+    public bool BuiltIn { get; init; }
+    public int PxW { get; init; }
+    public int PxH { get; init; }
+    public double Scale { get; init; } = 1;
+
     public RoamRect Rect => new(X, Y, W, H);
 }
 

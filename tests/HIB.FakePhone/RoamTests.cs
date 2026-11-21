@@ -70,7 +70,7 @@ sealed class RecordingHost : IRoamControllerHost
     public void ProbeDrag(RoamEdgeHint? at) => Probe = at;
     public void Drop(RoamNeighbor peer, double x, double y, IReadOnlyList<string> files) => Dropped = (peer, x, y, files);
     public void FinishLocalDrag(bool cancel) { }
-    public void Learned(RoamSide side, RoamNeighbor peer) => LearnedSide = (side, peer);
+    public void Learned(RoamSide side, RoamNeighbor peer, string? screenId) => LearnedSide = (side, peer);
     public void StateChanged() { }
 }
 
@@ -80,7 +80,7 @@ sealed class RecordingHost : IRoamControllerHost
 /// </summary>
 public class RoamTests
 {
-    static readonly byte[] SpaceKey = Enumerable.Range(1, 32).Select(i => (byte)(i * 11)).ToArray();
+    internal static readonly byte[] SpaceKey = Enumerable.Range(1, 32).Select(i => (byte)(i * 11)).ToArray();
 
     // A 1920×1080 PC at 100 % and a 1512×982-point Mac.
     static readonly RoamDisplay Pc = new(@"\\.\DISPLAY1", new RoamRect(0, 0, 1920, 1080), 1, true);
@@ -495,7 +495,7 @@ public class RoamTests
 
     // ---------------- two computers, in process ----------------
 
-    static SpaceOptions FastSpace() => new()
+    internal static SpaceOptions FastSpace() => new()
     {
         ActivitySampler = () => new ActivitySample(false, 300),
         ActivityCheck = TimeSpan.FromMilliseconds(100),
@@ -523,12 +523,13 @@ public class RoamTests
     }
 
     /// <summary>"A PC" (1920×1080) and "B PC" (2560×1440 at 200 % = 1280×720 points), linked directly, Roam ready.</summary>
-    static async Task<Pair> LinkedAsync()
+    /// <remarks>Without <paramref name="room"/> both behave like an H.I.B before the room (§9.2 edges only).</remarks>
+    static async Task<Pair> LinkedAsync(bool room = false)
     {
         var pa = new FakeRoamPlatform();
         var pb = new FakeRoamPlatform();
-        var a = new TestHost(name: "A PC", space: FastSpace(), roam: new RoamOptions { Platform = () => pa });
-        var b = new TestHost(name: "B PC", space: FastSpace(), roam: new RoamOptions { Platform = () => pb });
+        var a = new TestHost(name: "A PC", space: FastSpace(), roam: new RoamOptions { Platform = () => pa, Room = room });
+        var b = new TestHost(name: "B PC", space: FastSpace(), roam: new RoamOptions { Platform = () => pb, Room = room });
         a.Core.SpaceEngine.SetSpaceKey(SpaceKey);
         b.Core.SpaceEngine.SetSpaceKey(SpaceKey);
         a.Core.SpaceEngine.RememberPeer("B PC", "B PC", "windows", new[] { "127.0.0.1" }, b.Core.Link.Port);

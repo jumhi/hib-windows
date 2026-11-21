@@ -217,6 +217,7 @@ public sealed class AimLightWindow : OverlayWindow
 
     readonly Panel _glow;
     readonly Border _pill;
+    readonly TextBlock _label;
 
     public AimLightWindow(string screenId) : base("Flick aim", screenId)
     {
@@ -262,7 +263,7 @@ public sealed class AimLightWindow : OverlayWindow
             Foreground = FlickTheme.Solid(FlickTheme.Cyan),
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var text = new TextBlock
+        var text = _label = new TextBlock
         {
             Text = Label,
             FontSize = 13,
@@ -288,7 +289,10 @@ public sealed class AimLightWindow : OverlayWindow
         Root.Children.Add(_pill);
     }
 
-    public string LabelText => Label;
+    /// <summary>What the pill says: the phone's label (SPACE.md §11.2, e.g. "Desk Deck") or "Flick lands here".</summary>
+    public string LabelText => _label.Text ?? Label;
+
+    public void SetLabel(string? label) => _label.Text = string.IsNullOrWhiteSpace(label) ? Label : label;
 
     /// <summary>Space taken at the bottom by a taskbar, in DIPs.</summary>
     static double BottomInset(Screen screen, double scaling)

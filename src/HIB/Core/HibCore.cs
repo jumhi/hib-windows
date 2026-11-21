@@ -24,6 +24,12 @@ public sealed class HibCoreOptions
     public HIB.Core.Space.SpaceOptions Space { get; set; } = new();
     /// <summary>Shared mouse &amp; keyboard (SPACE.md §9): the input platform (Windows hooks by default).</summary>
     public HIB.Core.Roam.RoamOptions Roam { get; set; } = new();
+    /// <summary>Point to act (SPACE.md §11.3): what Desk Deck / Remote / media do here (Windows by default, nothing elsewhere).</summary>
+    public Func<HIB.Core.Act.IDesktopControl> Desktop { get; set; } = HIB.Core.Act.DesktopControls.CreateDefault;
+    /// <summary>Desk Deck's live state (CPU, memory, battery, network).</summary>
+    public Func<HIB.Core.Act.ISystemStats> Stats { get; set; } = HIB.Core.Act.DesktopControls.CreateStats;
+    /// <summary>How often an open Desk Deck gets deckState (2 s like the Mac).</summary>
+    public TimeSpan? DeckInterval { get; set; }
 
     static bool DiscoveryDefault()
     {
@@ -75,6 +81,8 @@ public sealed class HibCore : IDisposable
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Aim = new PointAim(Link);
         Aim.Log += AddLog;
+        Deck = new HIB.Core.Act.DeskDeck(Link, Options.Desktop(), Options.Stats(), Options.DeckInterval) { Audio = () => space.Audio };
+        Deck.Log += AddLog;
         Link.ConnectionChanged += (_, connected) =>
         {
             if (!connected && Udp is not null) _ = Udp.BurstAsync();
@@ -100,6 +108,8 @@ public sealed class HibCore : IDisposable
     public IClipboardBridge? ClipboardBridge { get; private set; }
     /// <summary>Shared mouse &amp; keyboard with another computer (SPACE.md §9).</summary>
     public HIB.Core.Roam.RoamEngine Roam { get; }
+    /// <summary>Desk Deck, the Remote and media controls from the phone (SPACE.md §11.3).</summary>
+    public HIB.Core.Act.DeskDeck Deck { get; }
     public UdpPresence? Udp { get; private set; }
     public MdnsAdvertiser? Mdns { get; private set; }
 
@@ -226,6 +236,7 @@ public sealed class HibCore : IDisposable
         Udp?.Dispose();
         Mdns?.Dispose();
         Roam.Dispose();
+        Deck.Dispose();
         SpaceEngine.Dispose();
         Aim.Dispose();
         Link.Dispose();

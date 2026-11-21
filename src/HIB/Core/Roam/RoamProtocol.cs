@@ -41,7 +41,22 @@ public sealed record CtlHello(bool Enabled, string Platform, IReadOnlyList<RoamS
     {
         var screens = new JsonArray();
         foreach (var s in Screens)
-            screens.Add(new JsonObject { ["id"] = s.Id, ["x"] = Round(s.X), ["y"] = Round(s.Y), ["w"] = Round(s.W), ["h"] = Round(s.H) });
+            screens.Add(new JsonObject
+            {
+                ["id"] = s.Id,
+                ["x"] = Round(s.X),
+                ["y"] = Round(s.Y),
+                ["w"] = Round(s.W),
+                ["h"] = Round(s.H),
+                // §10.1
+                ["name"] = s.Name,
+                ["mmW"] = Math.Round(s.MmW, 1),
+                ["mmH"] = Math.Round(s.MmH, 1),
+                ["builtIn"] = s.BuiltIn,
+                ["pxW"] = s.PxW > 0 ? s.PxW : (int)Math.Round(s.W * s.Scale),
+                ["pxH"] = s.PxH > 0 ? s.PxH : (int)Math.Round(s.H * s.Scale),
+                ["scale"] = Math.Round(s.Scale > 0 ? s.Scale : 1, 3),
+            });
         return new JsonObject
         {
             ["v"] = V,
@@ -64,7 +79,18 @@ public sealed record CtlHello(bool Enabled, string Platform, IReadOnlyList<RoamS
                 var w = s.Double("w") ?? 0;
                 var h = s.Double("h") ?? 0;
                 if (w <= 0 || h <= 0) continue;
-                screens.Add(new RoamScreen(s.Str("id") ?? "", s.Double("x") ?? 0, s.Double("y") ?? 0, w, h));
+                static double Mm(double? v) => v is { } d && double.IsFinite(d) && d > 0 && d < 10000 ? d : 0;
+                var scale = s.Double("scale") is { } sc && double.IsFinite(sc) && sc > 0 ? sc : 1;
+                screens.Add(new RoamScreen(s.Str("id") ?? "", s.Double("x") ?? 0, s.Double("y") ?? 0, w, h)
+                {
+                    Name = s.Str("name") ?? "",
+                    MmW = Mm(s.Double("mmW")),
+                    MmH = Mm(s.Double("mmH")),
+                    BuiltIn = s.Bool("builtIn") ?? false,
+                    PxW = s.Int("pxW") is int pw && pw > 0 ? pw : (int)Math.Round(w * scale),
+                    PxH = s.Int("pxH") is int ph && ph > 0 ? ph : (int)Math.Round(h * scale),
+                    Scale = scale,
+                });
             }
         }
         return new CtlHello(d.Bool("enabled") ?? true, (d.Str("platform") ?? "mac").ToLowerInvariant(), screens,

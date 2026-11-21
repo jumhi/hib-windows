@@ -11,8 +11,19 @@ using HIB.Core.Link;
 
 namespace HIB.Core.Phone;
 
-/// <summary>A monitor as the phone sees it (§7.2): bounds in DIPs, y down.</summary>
-public sealed record DisplayScreen(string Id, string Name, bool Primary, double X, double Y, double W, double H);
+/// <summary>
+/// A monitor as the phone sees it (§7.2): bounds in DIPs, y down. §10.1 adds what the room needs: the physical size in
+/// millimetres (0 = unknown), whether it is the laptop's own panel, its native pixels and its scale.
+/// </summary>
+public sealed record DisplayScreen(string Id, string Name, bool Primary, double X, double Y, double W, double H)
+{
+    public double MmW { get; init; }
+    public double MmH { get; init; }
+    public bool BuiltIn { get; init; }
+    public int PxW { get; init; }
+    public int PxH { get; init; }
+    public double Scale { get; init; } = 1;
+}
 
 /// <summary>The screen being learned in Point setup (§7.5).</summary>
 public sealed record AimSetupState(DisplayScreen Screen, int Step, int Total, double Progress)
@@ -41,6 +52,8 @@ public sealed class AimTracker
 
     public IReadOnlyList<DisplayScreen> Screens => _screens;
     public DisplayScreen? Lit { get; private set; }
+    /// <summary>§11.2: what the aim-light pill says ("Desk Deck"); null = "Flick lands here".</summary>
+    public string? Label { get; private set; }
     public AimSetupState? Setup { get; private set; }
     public bool IsActive => Lit is not null || Setup is not null;
 
@@ -77,8 +90,11 @@ public sealed class AimTracker
         }
     }
 
-    /// <summary>flickAim: <paramref name="id"/> null = light nothing here.</summary>
-    public void ApplyAim(string? id, bool named, DateTime now)
+    /// <summary>The longest label the pill shows (the phone keeps it short anyway).</summary>
+    public const int MaxLabel = 40;
+
+    /// <summary>flickAim: <paramref name="id"/> null = light nothing here. <paramref name="label"/> (§11.2) replaces "Flick lands here".</summary>
+    public void ApplyAim(string? id, bool named, DateTime now, string? label = null)
     {
         if (!named)
         {
@@ -87,6 +103,15 @@ public sealed class AimTracker
         }
         var screen = Resolve(id);
         _litAt = now;
+        label = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
+        if (label is { Length: > MaxLabel }) label = label[..MaxLabel].TrimEnd() + "…";
+        if (label != Label && screen is not null && screen == Lit)
+        {
+            Label = label;
+            LitChanged?.Invoke(screen); // same screen, new words
+            return;
+        }
+        Label = label;
         SetLit(screen);
     }
 
@@ -194,6 +219,8 @@ public sealed class PointAim : IDisposable
 
     /// <summary>The screen the aim light is on (null = none).</summary>
     public DisplayScreen? Lit { get { lock (_gate) return _tracker.Lit; } }
+    /// <summary>The aim-light pill's words from the phone (§11.2), or null for "Flick lands here".</summary>
+    public string? LitLabel { get { lock (_gate) return _tracker.Label; } }
     /// <summary>The point target (null = hidden).</summary>
     public AimSetupState? Setup { get { lock (_gate) return _tracker.Setup; } }
     public IReadOnlyList<DisplayScreen> Screens { get { lock (_gate) return _tracker.Screens; } }
@@ -239,6 +266,13 @@ public sealed class PointAim : IDisposable
             ["y"] = Math.Round(s.Y, 2),
             ["w"] = Math.Round(s.W, 2),
             ["h"] = Math.Round(s.H, 2),
+            // §10.1
+            ["mmW"] = Math.Round(s.MmW, 1),
+            ["mmH"] = Math.Round(s.MmH, 1),
+            ["builtIn"] = s.BuiltIn,
+            ["pxW"] = s.PxW > 0 ? s.PxW : (int)Math.Round(s.W * s.Scale),
+            ["pxH"] = s.PxH > 0 ? s.PxH : (int)Math.Round(s.H * s.Scale),
+            ["scale"] = Math.Round(s.Scale > 0 ? s.Scale : 1, 3),
         }).ToArray(),
     };
 
@@ -276,7 +310,8 @@ public sealed class PointAim : IDisposable
             case "flickAim":
             {
                 var (id, named) = ScreenField(d);
-                Run(() => _tracker.ApplyAim(id, named, _now()));
+                var label = d.ValueKind == JsonValueKind.Object ? d.Str("label") : null;
+                Run(() => _tracker.ApplyAim(id, named, _now(), label));
                 break;
             }
             case "aimSetup":
@@ -328,7 +363,7 @@ public sealed class PointAim : IDisposable
     }
 
     static string Signature(IReadOnlyList<DisplayScreen> screens)
-        => string.Join("|", screens.Select(s => $"{s.Id}/{s.Name}/{s.Primary}/{s.X:0.##},{s.Y:0.##},{s.W:0.##}x{s.H:0.##}"));
+        => string.Join("|", screens.Select(s => $"{s.Id}/{s.Name}/{s.Primary}/{s.X:0.##},{s.Y:0.##},{s.W:0.##}x{s.H:0.##}/{s.MmW:0.#}x{s.MmH:0.#}/{s.BuiltIn}/{s.PxW}x{s.PxH}@{s.Scale:0.###}"));
 
     public void Dispose() => _timer.Dispose();
 }

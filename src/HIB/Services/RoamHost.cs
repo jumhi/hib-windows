@@ -66,7 +66,13 @@ public sealed partial class RoamHost : IDisposable
     {
         var list = _app.Screens.Current()
             .Select(x => new RoamDisplay(x.Info.Id, new RoamRect(x.Screen.Bounds.X, x.Screen.Bounds.Y, x.Screen.Bounds.Width, x.Screen.Bounds.Height),
-                x.Screen.Scaling > 0 ? x.Screen.Scaling : 1, x.Info.Primary))
+                x.Screen.Scaling > 0 ? x.Screen.Scaling : 1, x.Info.Primary)
+            {
+                Name = x.Info.Name,
+                MmW = x.Info.MmW,
+                MmH = x.Info.MmH,
+                BuiltIn = x.Info.BuiltIn,
+            })
             .ToList();
         if (list.Count > 0) _app.Core.Roam.SetDisplays(list);
     }
@@ -106,15 +112,16 @@ public sealed partial class RoamHost : IDisposable
         var scale = screen.Scaling > 0 ? screen.Scaling : 1;
         var origin = RoamSides.IsHorizontal(hint.Side) ? screen.Bounds.Y : screen.Bounds.X;
         var along = (hint.Along - origin) / scale;
+        var (s0, s1) = hint.HasSegment ? ((hint.SegStart - origin) / scale, (hint.SegEnd - origin) / scale) : (0.0, 0.0);
         var id = IdFor(screen);
         if (_edge is { IsFadingOut: false, IsClosed: false } current && current.Side == hint.Side && current.ScreenId == id)
         {
-            current.Update(hint.PillText, along);
+            current.Update(hint.PillText, along, s0, s1);
             return;
         }
         _edge?.FadeOutAndClose();
         _edge = new RoamEdgeWindow(hint.Side, id);
-        _edge.Update(hint.PillText, along);
+        _edge.Update(hint.PillText, along, s0, s1);
         _edge.ShowOn(screen);
     }
 

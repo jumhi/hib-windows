@@ -236,7 +236,7 @@ public class PointFlickTests
         var d = ScreenMap.Describe(screens).Select(x => x.Info).ToList();
         Assert.Equal(new[] { @"\\.\DISPLAY1", "3024,0,1920x1080", "DELL U2720Q", "4944,0,3840x2160" }, d.Select(s => s.Id));
         Assert.Equal(new[] { "Display 1", "Display 2", "DELL U2720Q", "DELL U2720Q" }, d.Select(s => s.Name));
-        Assert.Equal(new DisplayScreen(@"\\.\DISPLAY1", "Display 1", true, 0, 0, 1512, 982), d[0]); // DIPs
+        Assert.Equal(new DisplayScreen(@"\\.\DISPLAY1", "Display 1", true, 0, 0, 1512, 982) { PxW = 3024, PxH = 1964, Scale = 2 }, d[0]); // DIPs
         Assert.Equal(-2560, d[2].X);
         Assert.Equal(2560, d[2].W);
         Assert.Equal(1440, d[2].H);
