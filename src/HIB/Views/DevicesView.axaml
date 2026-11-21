@@ -30,6 +30,39 @@
       <Setter Property="FontSize" Value="12.5"/>
       <Setter Property="Margin" Value="0,0,6,6"/>
     </Style>
+    <!-- the ← Left / Right → picker (a small glass segmented control) -->
+    <Style Selector="Border.seg">
+      <Setter Property="Background" Value="{StaticResource HibGlassFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HibGlassStroke}"/>
+      <Setter Property="BorderThickness" Value="0.8"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="2"/>
+    </Style>
+    <Style Selector="Border.seg.ask">
+      <Setter Property="BorderBrush" Value="#8020D9FF"/>
+      <Setter Property="BoxShadow" Value="0 0 14 0 #4020D9FF"/>
+    </Style>
+    <Style Selector="Button.seg">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="11,3"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="Foreground" Value="{StaticResource HibMuted}"/>
+    </Style>
+    <Style Selector="Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#14FFFFFF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibText}"/>
+    </Style>
+    <Style Selector="Button.seg.on">
+      <Setter Property="Background" Value="{StaticResource HibCyanSelected}"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
+    <Style Selector="Button.seg.on:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4220D9FF"/>
+      <Setter Property="Foreground" Value="{StaticResource HibCyan}"/>
+    </Style>
   </UserControl.Styles>
 
   <ScrollViewer Padding="22,0,8,24">
@@ -142,6 +175,47 @@
                     </Button>
                   </WrapPanel>
                   <TextBlock Text="{Binding Status}" Classes="caption" Foreground="{StaticResource HibCyan}" TextWrapping="Wrap" Margin="0,-6,0,0" IsVisible="{Binding HasStatus}"/>
+
+                  <!-- Mouse & keyboard (Roam, SPACE.md §9.6): one mouse and keyboard across this PC and that computer -->
+                  <StackPanel Spacing="9" IsVisible="{Binding HasRoam}">
+                    <Border Classes="divider"/>
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                      <Border Width="28" Height="28" CornerRadius="9" Background="{StaticResource HibCyanSoft}" Margin="0,0,10,0">
+                        <c:Icon Data="{x:Static vm:Icons.Mouse}" Size="15" Classes="cyan" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <TextBlock Text="Mouse &amp; keyboard" FontSize="13.5" FontWeight="SemiBold"/>
+                        <TextBlock Text="Push the cursor off the edge to use it there" Classes="faint" FontSize="11.5" TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="2" IsChecked="{Binding RoamEnabled}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <StackPanel Spacing="9" IsVisible="{Binding RoamEnabled}">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{Binding RoamSideLabel}" Classes="caption" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource HibText}" FontWeight="Medium"/>
+                        <Border Grid.Column="1" Classes="seg" Classes.ask="{Binding RoamAsks}">
+                          <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button Classes="seg" Classes.on="{Binding RoamLeftSelected}" Content="← Left" Command="{Binding RoamLeftCommand}"
+                                    ToolTip.Tip="{Binding Name, StringFormat='{}{0} is to the left of this PC'}"/>
+                            <Button Classes="seg" Classes.on="{Binding RoamRightSelected}" Content="Right →" Command="{Binding RoamRightCommand}"
+                                    ToolTip.Tip="{Binding Name, StringFormat='{}{0} is to the right of this PC'}"/>
+                          </StackPanel>
+                        </Border>
+                      </Grid>
+                      <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding RoamIsMac}">
+                        <c:Icon Data="{x:Static vm:Icons.Command}" Size="14" Classes="muted" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="⌘ works as Ctrl on the PC" FontSize="12.5" VerticalAlignment="Center"/>
+                        <ToggleSwitch Grid.Column="2" IsChecked="{Binding RoamCmdAsCtrl}" VerticalAlignment="Center"/>
+                      </Grid>
+                      <Border Classes="chip" Classes.cyan="{Binding !RoamActive}" Classes.lime="{Binding RoamActive}" HorizontalAlignment="Stretch" CornerRadius="12" Padding="10,6">
+                        <TextBlock Text="{Binding RoamStatus}" TextWrapping="Wrap" FontSize="12"/>
+                      </Border>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" ToolTip.Tip="Windows doesn't let a normal app drive windows running as administrator, or the lock screen.">
+                      <c:Icon Data="{x:Static vm:Icons.Info}" Size="12" Classes="muted" VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding RoamInfo}" Classes="faint" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="300" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </StackPanel>
                 </StackPanel>
 
                 <!-- drop highlight -->

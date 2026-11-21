@@ -108,8 +108,28 @@ public sealed class FlickCardManager
             From = f.From,
         };
         Screen? screen = null;
-        try { screen = _app.Flick.PickFor(f); } catch { }
-        Spawn(card, f.ExitXRatio, f.Velocity, f.Angle, screen);
+        (double X, double Y)? dropAt = null;
+        if (f.At is { } at && DropScreen(at.X, at.Y) is { } drop)
+        {
+            // Roam (SPACE.md §9.5): the file was dragged across and dropped here — the card appears at the drop point.
+            screen = drop.Screen;
+            dropAt = (at.X - drop.Info.X, at.Y - drop.Info.Y);
+        }
+        else
+        {
+            try { screen = _app.Flick.PickFor(f); } catch { }
+        }
+        Spawn(card, f.ExitXRatio, f.Velocity, f.Angle, screen, dropAt);
+    }
+
+    /// <summary>The monitor whose points rectangle holds (x, y), else the nearest one.</summary>
+    (HIB.Core.Phone.DisplayScreen Info, Screen Screen)? DropScreen(double x, double y)
+    {
+        var all = _app.Screens.Current();
+        if (all.Count == 0) return null;
+        var rects = all.Select(s => new HIB.Core.Roam.RoamRect(s.Info.X, s.Info.Y, s.Info.W, s.Info.H)).ToList();
+        var i = HIB.Core.Roam.RoamGeometry.ScreenAt(x, y, rects);
+        return i < 0 ? null : all[i];
     }
 
     void OnProgress(TransferProgress p)
@@ -191,7 +211,7 @@ public sealed class FlickCardManager
 
     // ---------------- spawning & physics ----------------
 
-    void Spawn(FlickCard card, double exitXRatio, double velocity, double angle, Screen? chosen)
+    void Spawn(FlickCard card, double exitXRatio, double velocity, double angle, Screen? chosen, (double X, double Y)? dropAt = null)
     {
         var view = new FlickCardView(card);
         var window = new FlickCardWindow(view);
@@ -221,7 +241,14 @@ public sealed class FlickCardManager
         tx = Math.Clamp(tx, v.X + FlickCardView.CardWidth / 2 + 24, Math.Max(v.X + FlickCardView.CardWidth / 2 + 24, v.Right - FlickCardView.CardWidth / 2 - 24));
         ty = Math.Clamp(ty, v.Y + FlickCardView.CardHeight / 2 + 24, Math.Max(v.Y + FlickCardView.CardHeight / 2 + 24, v.Bottom - FlickCardView.CardHeight / 2 - 24));
         var areaHeight = e.ScreenBounds.Height / e.Scaling;
-        e.Body = FlickBody.Launch(areaWidth, areaHeight, FlickCardView.CardHeight, ratio, velocity, angle, tx, ty, slot);
+        if (dropAt is { } at)
+        {
+            // Dropped here: grow out of the ghost at the drop point (kept on screen).
+            var dx = Math.Clamp(at.X, v.X + FlickCardView.CardWidth / 2 + 8, Math.Max(v.X + FlickCardView.CardWidth / 2 + 8, v.Right - FlickCardView.CardWidth / 2 - 8));
+            var dy = Math.Clamp(at.Y, v.Y + FlickCardView.CardHeight / 2 + 8, Math.Max(v.Y + FlickCardView.CardHeight / 2 + 8, v.Bottom - FlickCardView.CardHeight / 2 - 8));
+            e.Body = FlickBody.DropAt(dx, dy, slot);
+        }
+        else e.Body = FlickBody.Launch(areaWidth, areaHeight, FlickCardView.CardHeight, ratio, velocity, angle, tx, ty, slot);
 
         view.RenderTransform = new TransformGroup { Children = { new ScaleTransform(), new RotateTransform() } };
         view.Face.IsHitTestVisible = false;

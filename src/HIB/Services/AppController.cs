@@ -34,6 +34,8 @@ public sealed class AppController
         Cards = new HIB.Views.Flick.FlickCardManager(this);
         // Flick shelf, Explorer "Send to", --send-to pipe (the real desktop app only).
         if (lifetime is not null) SpaceUi = new SpaceUiHost(this);
+        // Roam: shared mouse & keyboard — the edge glow, the drop catcher, the ghost card (SPACE.md §9).
+        Roam = new RoamHost(this);
         // Point & Flick: screensInfo to the phone, the aim light and the point target (SPACE.md §7).
         Point = new PointFlickHost(this);
 
@@ -81,6 +83,7 @@ public sealed class AppController
     public ScreenMap Screens { get; }
     public FlickPresenter Flick { get; }
     public PointFlickHost Point { get; }
+    public RoamHost Roam { get; }
     public HIB.Views.Flick.FlickCardManager Cards { get; }
     public SpaceUiHost? SpaceUi { get; }
     public Window? MainWindow => WindowOverride ?? _lifetime?.MainWindow;
@@ -110,6 +113,7 @@ public sealed class AppController
         if (_quitting) return;
         _quitting = true;
         try { SpaceUi?.Dispose(); } catch { }
+        try { Roam.Dispose(); } catch { }
         try { Features?.Dispose(); } catch { }
         try { Core.Dispose(); } catch { }
         _lifetime?.Shutdown();

@@ -226,6 +226,56 @@ public sealed partial class DeviceCardViewModel : ObservableObject
 
     [RelayCommand] void Ring() => _owner.Ring();
     [RelayCommand] Task TogglePlay() => _owner.TogglePlayHereAsync();
+
+    // ---------------- Mouse & keyboard (Roam, SPACE.md §9.6) ----------------
+
+    HIB.Core.Roam.RoamEngine RoamEngine => _owner.App.Core.Roam;
+    HIB.Core.Roam.RoamPeerStatus? Roam => IsComputer ? RoamEngine.StatusFor(Id) : null;
+
+    /// <summary>The row shows for every computer on a direct link.</summary>
+    public bool HasRoam => IsComputer && Device.Online && Device.Route == SpaceRoute.Direct && Roam is not null;
+
+    public bool RoamEnabled
+    {
+        get => Roam?.Enabled ?? false;
+        set
+        {
+            if (Roam is { } r && r.Enabled != value) RoamEngine.SetEnabled(Id, value);
+        }
+    }
+
+    public bool RoamCmdAsCtrl
+    {
+        get => Roam?.CmdAsCtrl ?? true;
+        set
+        {
+            if (Roam is { } r && r.CmdAsCtrl != value) RoamEngine.SetCmdAsCtrl(Id, value);
+        }
+    }
+
+    /// <summary>"⌘ works as Ctrl on the PC" only means something with a Mac.</summary>
+    public bool RoamIsMac => Roam?.IsMac ?? Device.Kind == SpaceDeviceKind.Mac;
+    public bool RoamLeftSelected => Roam is { Side: HIB.Core.Roam.RoamSide.Left, NeedsAsk: false };
+    public bool RoamRightSelected => Roam is { Side: HIB.Core.Roam.RoamSide.Right };
+    public bool RoamAsks => Roam?.NeedsAsk ?? false;
+
+    public string RoamSideLabel => Roam switch
+    {
+        null => "",
+        { NeedsAsk: true } => $"Where is {Name}?",
+        { SideSource: HIB.Core.Roam.RoamSideSource.PointSetup, Side: HIB.Core.Roam.RoamSide.Above } => "Above this PC · from Point setup",
+        { SideSource: HIB.Core.Roam.RoamSideSource.PointSetup, Side: HIB.Core.Roam.RoamSide.Below } => "Below this PC · from Point setup",
+        { SideSource: HIB.Core.Roam.RoamSideSource.PointSetup } => "Side · from Point setup",
+        _ => "Side · set by you",
+    };
+
+    public string RoamStatus => Roam?.Status ?? "";
+    public bool RoamActive => Roam is { Role: not HIB.Core.Roam.RoamRole.None };
+    public const string RoamLimitText = "Works without admin rights · can't control admin windows or the lock screen";
+    public string RoamInfo => RoamLimitText;
+
+    [RelayCommand] void RoamLeft() => RoamEngine.SetSide(Id, HIB.Core.Roam.RoamSide.Left);
+    [RelayCommand] void RoamRight() => RoamEngine.SetSide(Id, HIB.Core.Roam.RoamSide.Right);
 }
 
 public partial class DevicesViewModel : ViewModelBase
@@ -236,6 +286,7 @@ public partial class DevicesViewModel : ViewModelBase
     {
         App = app;
         app.Core.Space.Changed += () => Ui.Post(Refresh);
+        app.Core.Roam.Changed += () => Ui.Post(Refresh);
         if (app.Features is { } f)
         {
             f.Audio.PropertyChanged += (_, _) => Ui.Post(Refresh);

@@ -63,6 +63,9 @@ public static class Icons
     public const string Download = "M12 15 V3 M21 15 v4 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 v-4 M7 10 l5 5 l5 -5";
     public const string Upload = "M12 3 v12 M17 8 l-5 -5 l-5 5 M21 15 v4 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 v-4";
     public const string MonitorDown = "M12 13 V7 M15 10 l-3 3 l-3 -3 M4 3 H20 A2 2 0 0 1 22 5 V15 A2 2 0 0 1 20 17 H4 A2 2 0 0 1 2 15 V5 A2 2 0 0 1 4 3 Z M12 17 v4 M8 21 h8";
+    public const string Mouse = "M12 2 A7 7 0 0 1 19 9 V15 A7 7 0 0 1 5 15 V9 A7 7 0 0 1 12 2 Z M12 6 V10";
+    public const string Keyboard = "M4 4 H20 A2 2 0 0 1 22 6 V18 A2 2 0 0 1 20 20 H4 A2 2 0 0 1 2 18 V6 A2 2 0 0 1 4 4 Z M6 8 h0.01 M10 8 h0.01 M14 8 h0.01 M18 8 h0.01 M8 12 h0.01 M12 12 h0.01 M16 12 h0.01 M7 16 h10";
+    public const string Command = "M15 6 v12 a3 3 0 1 0 3 -3 H6 a3 3 0 1 0 3 3 V6 a3 3 0 1 0 -3 3 h12 a3 3 0 1 0 -3 -3";
     public const string Hand = "M18 11 V6 a2 2 0 0 0 -2 -2 a2 2 0 0 0 -2 2 M14 10 V4 a2 2 0 0 0 -2 -2 a2 2 0 0 0 -2 2 v2 M10 10.5 V6 a2 2 0 0 0 -2 -2 a2 2 0 0 0 -2 2 v8 M18 8 a2 2 0 1 1 4 0 v6 a8 8 0 0 1 -8 8 h-2 c-2.8 0 -4.5 -0.86 -5.99 -2.34 l-3.6 -3.6 a2 2 0 0 1 2.83 -2.82 L7 15";
     public const string MapPin = "M20 10 c0 4.993 -5.539 10.193 -7.399 11.799 a1 1 0 0 1 -1.202 0 C9.539 20.193 4 14.993 4 10 a8 8 0 0 1 16 0 M9 10 A3 3 0 1 0 15 10 A3 3 0 1 0 9 10 Z";
     public const string Locate = "M2 12 L5 12 M19 12 L22 12 M12 2 L12 5 M12 19 L12 22 M5 12 A7 7 0 1 0 19 12 A7 7 0 1 0 5 12 Z";

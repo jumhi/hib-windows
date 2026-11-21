@@ -154,7 +154,11 @@ public sealed class RoamController
             if (_learner.Feed(side, atEdge, toward, distance, now))
             {
                 var opposite = _neighbors.Where(n => n.Side == RoamSides.Mirror(side)).ToList();
-                if (opposite.Count == 1) _host.Learned(side, opposite[0]);
+                if (opposite.Count == 1)
+                {
+                    _host.Learned(side, opposite[0]);
+                    return; // the next push goes across; this one only taught us
+                }
             }
         }
 

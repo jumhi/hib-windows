@@ -339,18 +339,18 @@ public sealed class PeerNetwork : IDisposable
     /// </summary>
     static readonly HttpMessageInvoker Dialer = new(new SocketsHttpHandler
     {
-        ConnectCallback = ConnectNoDelayAsync,
+        ConnectCallback = (context, ct) => ConnectNoDelayAsync(context.DnsEndPoint, ct),
         UseProxy = false,
         PooledConnectionLifetime = TimeSpan.Zero,
     });
 
     /// <summary>Opens the TCP connection for a peer dial with Nagle off.</summary>
-    public static async ValueTask<Stream> ConnectNoDelayAsync(SocketsHttpConnectionContext context, CancellationToken ct)
+    public static async ValueTask<Stream> ConnectNoDelayAsync(DnsEndPoint endPoint, CancellationToken ct)
     {
         var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try
         {
-            await socket.ConnectAsync(context.DnsEndPoint, ct).ConfigureAwait(false);
+            await socket.ConnectAsync(endPoint, ct).ConfigureAwait(false);
             return new NetworkStream(socket, ownsSocket: true);
         }
         catch

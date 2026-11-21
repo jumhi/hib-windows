@@ -58,6 +58,23 @@ public struct FlickBody
         };
     }
 
+    /// <summary>
+    /// A card that appears where a file was dropped (Roam, SPACE.md §9.5): it starts at the point, a little small, and
+    /// springs to full size with a slight tilt — no flight.
+    /// </summary>
+    public static FlickBody DropAt(double x, double y, int slot) => new()
+    {
+        X = x,
+        Y = y,
+        TargetX = x,
+        TargetY = y,
+        Rot = 0,
+        TargetRot = -(slot % 3 - 1) * 1.6,
+        Scale = 0.78,
+        Alpha = 1,
+        Mode = FlickBodyMode.Flying,
+    };
+
     /// <summary>Advances by <paramref name="dt"/> seconds; returns true while still moving.</summary>
     public bool Step(double dt)
     {

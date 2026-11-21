@@ -44,6 +44,8 @@ public sealed class PointFlickHost : IDisposable
         Watch();
         var screens = _app.Screens.Current().Select(x => x.Info).ToList();
         if (screens.Count > 0) _app.Core.Aim.SetScreens(screens);
+        // Roam needs the same monitors (with pixels and scale) for its edges and injection.
+        _app.Roam.PublishDisplays();
     }
 
     void Watch()
