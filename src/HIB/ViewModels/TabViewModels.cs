@@ -271,7 +271,7 @@ public sealed partial class DeviceCardViewModel : ObservableObject
 
     public string RoamStatus => Roam?.Status ?? "";
     public bool RoamActive => Roam is { Role: not HIB.Core.Roam.RoamRole.None };
-    public const string RoamLimitText = "Works without admin rights · can't control admin windows or the lock screen";
+    public const string RoamLimitText = "No admin needed · can’t control admin apps or lock screen";
     public string RoamInfo => RoamLimitText;
 
     [RelayCommand] void RoamLeft() => RoamEngine.SetSide(Id, HIB.Core.Roam.RoamSide.Left);

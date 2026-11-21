@@ -622,6 +622,7 @@ public class RoamTests
         Assert.True(await Eventually.TrueAsync(() => a.Core.Roam.StatusFor("B PC") is { Side: RoamSide.Left, SideSource: RoamSideSource.PointSetup }
                                                  && b.Core.Roam.StatusFor("A PC") is { Side: RoamSide.Right, SideSource: RoamSideSource.PointSetup }));
         // The same layout again (the phone re-sends it on reconnect) changes nothing.
+        await Task.Delay(500); // let both cleared hellos cross first
         a.Core.Roam.SetSide("B PC", RoamSide.Right);
         a.Core.Roam.ApplyLayout(layout);
         Assert.Equal(RoamSideSource.Manual, a.Core.Roam.StatusFor("B PC")!.SideSource);
@@ -701,65 +702,6 @@ public class RoamTests
 
     // ---------------- a Mac peer speaking the raw protocol ----------------
 
-    /// <summary>A Mac on the peer link, speaking the JSON of SPACE.md §9.3 by hand.</summary>
-    sealed class RawMac : IAsyncDisposable
-    {
-        readonly ClientWebSocket _ws = new();
-        readonly List<JsonElement> _got = new();
-        readonly CancellationTokenSource _cts = new();
-
-        public static async Task<RawMac> DialAsync(int port)
-        {
-            var m = new RawMac();
-            await m._ws.ConnectAsync(new Uri($"ws://127.0.0.1:{port}/peer"), CancellationToken.None);
-            await m.SendAsync("peerHello", new { id = "A Mac", name = "A Mac", platform = "mac", type = "MacBook Pro", port = 1, ips = new[] { "127.0.0.1" }, v = 1 });
-            _ = m.ReceiveAsync();
-            return m;
-        }
-
-        public Task SendAsync(string type, object data)
-            => _ws.SendAsync(Encoding.UTF8.GetBytes(LinkCrypto.Encrypt(LinkServer.BuildEnvelope(type, data), SpaceKey)), WebSocketMessageType.Text, true, CancellationToken.None);
-
-        public Task SendRawAsync(string json)
-            => _ws.SendAsync(Encoding.UTF8.GetBytes(LinkCrypto.Encrypt(json, SpaceKey)), WebSocketMessageType.Text, true, CancellationToken.None);
-
-        async Task ReceiveAsync()
-        {
-            var buf = new byte[256 * 1024];
-            try
-            {
-                while (_ws.State == WebSocketState.Open)
-                {
-                    var r = await _ws.ReceiveAsync(buf, _cts.Token);
-                    if (r.MessageType == WebSocketMessageType.Close) return;
-                    var plain = LinkCrypto.TryDecrypt(Encoding.UTF8.GetString(buf, 0, r.Count), SpaceKey);
-                    if (plain is null) continue;
-                    using var doc = JsonDocument.Parse(plain);
-                    if (doc.RootElement.GetProperty("type").GetString() == "ping")
-                    {
-                        await SendAsync("pong", new { });
-                        continue;
-                    }
-                    lock (_got) _got.Add(doc.RootElement.Clone());
-                }
-            }
-            catch { }
-        }
-
-        public List<JsonElement> Of(string type)
-        {
-            lock (_got) return _got.Where(e => e.GetProperty("type").GetString() == type).Select(e => e.GetProperty("data")).ToList();
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            _cts.Cancel();
-            try { _ws.Abort(); } catch { }
-            _ws.Dispose();
-            await Task.CompletedTask;
-        }
-    }
-
     [Fact]
     public async Task A_mac_drives_this_pc_and_this_pc_drives_the_mac_with_cmd_as_ctrl()
     {
@@ -767,7 +709,7 @@ public class RoamTests
         await using var host = new TestHost(name: "Office PC", space: FastSpace(), roam: new RoamOptions { Platform = () => pc });
         host.Core.SpaceEngine.SetSpaceKey(SpaceKey);
         host.Core.Roam.SetDisplays(new[] { Pc });
-        await using var mac = await RawMac.DialAsync(host.Core.Link.Port);
+        await using var mac = await RawMac.DialAsync(host.Core.Link.Port, SpaceKey);
         Assert.True(await Eventually.TrueAsync(() => mac.Of("ctlHello").Count > 0));
         var ours = mac.Of("ctlHello")[0];
         Assert.Equal("windows", ours.GetProperty("platform").GetString());
@@ -812,5 +754,80 @@ public class RoamTests
         var ups = mac.Of("ctlKey").Skip(2).Select(k => (k.GetProperty("usage").GetInt32(), k.GetProperty("down").GetBoolean())).ToList();
         Assert.Contains((RoamKeys.LeftGui, false), ups);
         Assert.Contains((0x19, false), ups);
+    }
+}
+
+/// <summary>A Mac on the peer link (SPACE.md §3.3), speaking the JSON of SPACE.md §9.3 by hand.</summary>
+sealed class RawMac : IAsyncDisposable
+{
+    readonly ClientWebSocket _ws = new();
+    readonly List<JsonElement> _got = new();
+    readonly CancellationTokenSource _cts = new();
+
+    readonly byte[] _key;
+
+    RawMac(byte[] key) => _key = key;
+
+    public static async Task<RawMac> DialAsync(int port, byte[] key, string id = "A Mac")
+    {
+        var m = new RawMac(key);
+        await m._ws.ConnectAsync(new Uri($"ws://127.0.0.1:{port}/peer"), CancellationToken.None);
+        await m.SendAsync("peerHello", new { id, name = id, platform = "mac", type = "MacBook Pro", port = 1, ips = new[] { "127.0.0.1" }, v = 1 });
+        _ = m.ReceiveAsync();
+        return m;
+    }
+
+    readonly SemaphoreSlim _send = new(1, 1);
+
+    public Task SendAsync(string type, object data) => SendRawAsync(LinkServer.BuildEnvelope(type, data));
+
+    /// <summary>One send at a time (a WebSocket allows a single outstanding send; pongs go out from the receive loop).</summary>
+    public async Task SendRawAsync(string json)
+    {
+        await _send.WaitAsync();
+        try { await _ws.SendAsync(Encoding.UTF8.GetBytes(LinkCrypto.Encrypt(json, _key)), WebSocketMessageType.Text, true, CancellationToken.None); }
+        finally { _send.Release(); }
+    }
+
+    async Task ReceiveAsync()
+    {
+        var buf = new byte[256 * 1024];
+        try
+        {
+            while (_ws.State == WebSocketState.Open)
+            {
+                var count = 0;
+                WebSocketReceiveResult r;
+                do
+                {
+                    r = await _ws.ReceiveAsync(new ArraySegment<byte>(buf, count, buf.Length - count), _cts.Token);
+                    count += r.Count;
+                } while (!r.EndOfMessage && count < buf.Length);
+                if (r.MessageType == WebSocketMessageType.Close) return;
+                var plain = LinkCrypto.TryDecrypt(Encoding.UTF8.GetString(buf, 0, count), _key);
+                if (plain is null) continue;
+                using var doc = JsonDocument.Parse(plain);
+                if (doc.RootElement.GetProperty("type").GetString() == "ping")
+                {
+                    await SendAsync("pong", new { });
+                    continue;
+                }
+                lock (_got) _got.Add(doc.RootElement.Clone());
+            }
+        }
+        catch { }
+    }
+
+    public List<JsonElement> Of(string type)
+    {
+        lock (_got) return _got.Where(e => e.GetProperty("type").GetString() == type).Select(e => e.GetProperty("data")).ToList();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        try { _ws.Abort(); } catch { }
+        _ws.Dispose();
+        await Task.CompletedTask;
     }
 }

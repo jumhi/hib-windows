@@ -203,7 +203,7 @@
                         </Border>
                       </Grid>
                       <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding RoamIsMac}">
-                        <c:Icon Data="{x:Static vm:Icons.Command}" Size="14" Classes="muted" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                        <c:Icon Data="{x:Static vm:Icons.Keyboard}" Size="15" Classes="muted" Margin="0,0,9,0" VerticalAlignment="Center"/>
                         <TextBlock Grid.Column="1" Text="⌘ works as Ctrl on the PC" FontSize="12.5" VerticalAlignment="Center"/>
                         <ToggleSwitch Grid.Column="2" IsChecked="{Binding RoamCmdAsCtrl}" VerticalAlignment="Center"/>
                       </Grid>
@@ -212,8 +212,8 @@
                       </Border>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="6" ToolTip.Tip="Windows doesn't let a normal app drive windows running as administrator, or the lock screen.">
-                      <c:Icon Data="{x:Static vm:Icons.Info}" Size="12" Classes="muted" VerticalAlignment="Center"/>
-                      <TextBlock Text="{Binding RoamInfo}" Classes="faint" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="300" VerticalAlignment="Center"/>
+                      <c:Icon Data="{x:Static vm:Icons.Info}" Size="12" Classes="muted" VerticalAlignment="Top" Margin="0,1,0,0"/>
+                      <TextBlock Text="{Binding RoamInfo}" Classes="faint" FontSize="10.5" TextWrapping="Wrap" MaxWidth="316" VerticalAlignment="Center"/>
                     </StackPanel>
                   </StackPanel>
                 </StackPanel>

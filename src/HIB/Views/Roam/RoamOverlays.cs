@@ -26,7 +26,7 @@ public sealed class RoamEdgeWindow : OverlayWindow
     /// <summary>The click-through strip is this deep (DIPs) beside a left/right edge (room for the pill), and above/below.</summary>
     public const double SideDepth = 300;
     public const double TopDepth = 96;
-    const double Glow = 30;
+    const double Glow = 44;
     const double PillHeight = 32;
 
     readonly Border _wash;
@@ -51,14 +51,14 @@ public sealed class RoamEdgeWindow : OverlayWindow
         };
         _wash = new Border
         {
-            Background = FlickTheme.Linear(from, to, (FlickTheme.Cyan, 0.30, 0), (FlickTheme.Cyan, 0.09, 0.45), (FlickTheme.Cyan, 0, 1)),
+            Background = FlickTheme.Linear(from, to, (FlickTheme.Cyan, 0.5, 0), (FlickTheme.Cyan, 0.16, 0.4), (FlickTheme.Cyan, 0, 1)),
         };
         var alongStart = horizontal ? FlickTheme.Top : new RelativePoint(0, 0.5, RelativeUnit.Relative);
         var alongEnd = horizontal ? FlickTheme.Bottom : new RelativePoint(1, 0.5, RelativeUnit.Relative);
         _line = new Border
         {
-            Background = FlickTheme.Linear(alongStart, alongEnd, (FlickTheme.Cyan, 0.2, 0), (FlickTheme.Cyan, 0.95, 0.5), (FlickTheme.Cyan, 0.2, 1)),
-            BoxShadow = new BoxShadows(new BoxShadow { Blur = 14, Color = FlickTheme.A(FlickTheme.Cyan, 0.85) }),
+            Background = FlickTheme.Linear(alongStart, alongEnd, (FlickTheme.Cyan, 0.45, 0), (FlickTheme.Cyan, 1, 0.5), (FlickTheme.Cyan, 0.45, 1)),
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Spread = 1, Color = FlickTheme.A(FlickTheme.Cyan, 0.95) }),
         };
         // A brighter spot where the cursor meets the edge.
         _hot = new Border
@@ -71,8 +71,8 @@ public sealed class RoamEdgeWindow : OverlayWindow
                 RadiusY = new RelativeScalar(horizontal ? 0.5 : 1, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(FlickTheme.A(FlickTheme.Cyan, 0.5), 0),
-                    new GradientStop(FlickTheme.A(FlickTheme.Cyan, 0.16), 0.55),
+                    new GradientStop(FlickTheme.A(FlickTheme.Cyan, 0.7), 0),
+                    new GradientStop(FlickTheme.A(FlickTheme.Cyan, 0.24), 0.5),
                     new GradientStop(FlickTheme.A(FlickTheme.Cyan, 0), 1),
                 },
             },
@@ -129,7 +129,7 @@ public sealed class RoamEdgeWindow : OverlayWindow
         if (horizontal)
         {
             _wash.Width = Glow;
-            _line.Width = 3;
+            _line.Width = 4;
             _hot.Width = Glow * 2.4;
             _pill.HorizontalAlignment = hAlign;
             _pill.VerticalAlignment = VerticalAlignment.Top;
@@ -137,7 +137,7 @@ public sealed class RoamEdgeWindow : OverlayWindow
         else
         {
             _wash.Height = Glow;
-            _line.Height = 3;
+            _line.Height = 4;
             _hot.Height = Glow * 2.4;
             _pill.VerticalAlignment = vAlign;
             _pill.HorizontalAlignment = HorizontalAlignment.Left;
@@ -329,6 +329,29 @@ public sealed class RoamNoticeWindow : Window
         Title = "Roam";
         Icon = ImageUtil.WindowIcon();
         Text = text;
+        Content = Pill(text, () =>
+        {
+            undo();
+            Close();
+        });
+        FlickCardWindow.ApplyNoActivate(this);
+        _timer = new DispatcherTimer { Interval = Lifetime };
+        _timer.Tick += (_, _) =>
+        {
+            _timer.Stop();
+            Close();
+        };
+        Opened += (_, _) => _timer.Start();
+        Closed += (_, _) => _timer.Stop();
+    }
+
+    public string Text { get; }
+
+    public static string TextFor(RoamLearnedNotice n) => $"{n.Name} is on this side now";
+
+    /// <summary>The notice pill: a lime-edged ink capsule with the text and an "Undo" button.</summary>
+    public static Border Pill(string text, Action onUndo)
+    {
         var undoButton = new Button
         {
             Content = "Undo",
@@ -341,12 +364,8 @@ public sealed class RoamNoticeWindow : Window
             CornerRadius = new CornerRadius(999),
             VerticalAlignment = VerticalAlignment.Center,
         };
-        undoButton.Click += (_, _) =>
-        {
-            undo();
-            Close();
-        };
-        Content = new Border
+        undoButton.Click += (_, _) => onUndo();
+        return new Border
         {
             Margin = new Thickness(16),
             Height = 38,
@@ -368,20 +387,7 @@ public sealed class RoamNoticeWindow : Window
                 },
             },
         };
-        FlickCardWindow.ApplyNoActivate(this);
-        _timer = new DispatcherTimer { Interval = Lifetime };
-        _timer.Tick += (_, _) =>
-        {
-            _timer.Stop();
-            Close();
-        };
-        Opened += (_, _) => _timer.Start();
-        Closed += (_, _) => _timer.Stop();
     }
-
-    public string Text { get; }
-
-    public static string TextFor(RoamLearnedNotice n) => $"{n.Name} is on this side now";
 }
 
 /// <summary>

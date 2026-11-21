@@ -340,4 +340,60 @@ public class DesignShotsTests
         await Pump(300);
         Assert.True(light.IsClosed && target.IsClosed);
     }
+
+    [AvaloniaFact]
+    public async Task Roam_devices_row_and_overlays()
+    {
+        // The Devices tab with a Mac on the direct link: the Mouse & keyboard row asks where the Mac is.
+        await using (var setup = await RoamUiTests.Setup.StartAsync(renderScale: 2))
+        {
+            setup.Main.Navigate("devices");
+            await RoamUiTests.PumpUntil(() => setup.MacCard?.HasRoam == true);
+            await Pump(400);
+            Assert.True(setup.MacCard!.RoamAsks);
+            Shot(setup.Window, "windows-roam-devices");
+
+            // While the Mac drives this PC.
+            await setup.Mac.SendRawAsync("""{"type":"ctlEnter","data":{"x":0,"y":500,"clipboard":null}}""");
+            await RoamUiTests.PumpUntil(() => setup.MacCard?.RoamActive == true);
+            await Pump(200);
+            Shot(setup.Window, "windows-roam-devices-in-use");
+        }
+
+        // The edge glow on a 1440×900-point screen at 200 %, the cursor two thirds up the right edge.
+        var screen = FakeScreen.Make(@"\\.\DISPLAY1", new PixelRect(0, 0, 2880, 1800), 2, true, new PixelRect(0, 0, 2880, 1704));
+        var glow = new HIB.Views.Roam.RoamEdgeWindow(HIB.Core.Roam.RoamSide.Right, @"\\.\DISPLAY1");
+        glow.SetRenderScaling(2);
+        glow.Update(HIB.Core.Roam.RoamSides.PillText(HIB.Core.Roam.RoamSide.Right, RoamUiTests.MacName), 330);
+        glow.ShowOn(screen);
+        await Pump(300);
+        Assert.Equal(2880, glow.Area.Right);
+        var host = await OnDesktop(glow, glow.Area);
+        SaveShot(Capture(host), "windows-roam-edge-glow");
+        host.Close();
+        glow.FadeOutAndClose();
+
+        // A file dragged in from the Mac: the ghost card under the cursor.
+        var ghost = new HIB.Views.Roam.RoamGhostWindow();
+        ghost.SetRenderScaling(2);
+        ghost.Update(new HIB.Core.Roam.RoamGhost("d1", "Quarterly report.pdf", 1, 0, 0));
+        ghost.Show();
+        await Pump(100);
+        host = await OnDesktop(ghost, new PixelRect(1500, 760, (int)((HIB.Views.Roam.RoamGhostWindow.CardWidth + 24) * 2), (int)((HIB.Views.Roam.RoamGhostWindow.CardHeight + 24) * 2)));
+        SaveShot(Capture(host), "windows-roam-ghost");
+        host.Close();
+        ghost.Close();
+
+        // A computer that moved: "… is on this side now · Undo" at the edge it was learned on.
+        var pill = HIB.Views.Roam.RoamNoticeWindow.Pill($"{RoamUiTests.MacName} is on this side now", () => { });
+        pill.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        pill.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        var desk = new Bitmap(new MemoryStream(Png(2880, 1800, Desktop)));
+        var noticeHost = new Window { Width = 1440, Height = 900, Content = new Panel { Children = { new Image { Source = desk, Stretch = Stretch.Fill }, pill } } };
+        noticeHost.SetRenderScaling(2);
+        noticeHost.Show();
+        await Pump(300);
+        SaveShot(Capture(noticeHost), "windows-roam-notice");
+        noticeHost.Close();
+    }
 }
