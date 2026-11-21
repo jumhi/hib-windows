@@ -457,6 +457,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
             ExitXRatio = d.Double("exitXRatio") ?? 0.5,
             Velocity = d.Double("velocity") ?? 1800,
                     From = d.Str("from") is { Length: > 0 } from ? from : link.PeerName,
+                    At = HIB.Core.Roam.RoamWire.At(d),
                 };
                 RaiseFlickArrived(info);
                 if (info.IsTransferless) _ = link.SendAsync("flickLanded", new { id });
@@ -487,9 +488,28 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         }
     }
 
+    /// <summary>
+    /// Roam (SPACE.md §9.6, "in use follows the cursor"): true while another computer drives this one, false while this one
+    /// drives another, null for the normal keyboard/mouse sample. Reported to the phone and peers at once.
+    /// </summary>
+    public void SetRoamInUse(bool? inUse)
+    {
+        lock (_gate)
+        {
+            if (_roamInUse == inUse) return;
+            _roamInUse = inUse;
+        }
+        try { Sample(force: true); } catch (Exception ex) { WriteLog("Activity: " + ex.Message); }
+    }
+
+    bool? _roamInUse;
+
     void Sample(bool force)
     {
         var s = _options.ActivitySampler();
+        bool? roam;
+        lock (_gate) roam = _roamInUse;
+        if (roam is { } r) s = r ? new ActivitySample(true, 0) : new ActivitySample(false, Math.Max(s.IdleSeconds, DesktopActivity.InUseWindowSeconds));
         bool flipped;
         bool heartbeat;
         lock (_gate)
@@ -516,7 +536,8 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         return Ecosystem.Targets.Any(t => !t.IsPhone && SpaceIds.Same(t.Id, id));
     }
 
-    Dictionary<string, object?> FlickStartData(string id, string kind, string name, string mime, long size, byte[]? thumbnail, bool toPeer)
+    Dictionary<string, object?> FlickStartData(string id, string kind, string name, string mime, long size, byte[]? thumbnail, bool toPeer,
+        (double X, double Y)? at = null)
     {
         var d = new Dictionary<string, object?>
         {
@@ -535,6 +556,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
             d["velocity"] = 1800.0;
             d["angle"] = 0.0;
         }
+        if (at is { } p) d["at"] = new Dictionary<string, object?> { ["x"] = Math.Round(p.X, 2), ["y"] = Math.Round(p.Y, 2) };
         return d;
     }
 
@@ -569,7 +591,34 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         return results;
     }
 
-    async Task<SendResult> SendOneAsync(SpaceDevice target, string path, CancellationToken ct)
+    /// <summary>
+    /// Roam file drag (SPACE.md §9.5): the files dropped on another computer at (<paramref name="x"/>, <paramref name="y"/>)
+    /// in its points. Direct link only (the drop happened over it); each flickStart carries <c>"at"</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<SendResult>> SendFilesDroppedAsync(string deviceId, IReadOnlyList<string> paths, double x, double y, CancellationToken ct = default)
+    {
+        var results = new List<SendResult>();
+        foreach (var path in paths)
+        {
+            var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (Directory.Exists(path))
+            {
+                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, "Folders can't be sent"));
+                continue;
+            }
+            var target = Find(deviceId);
+            if (target is null || IsSelf(deviceId) || _net.Get(deviceId) is null)
+            {
+                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, $"{target?.Name ?? deviceId} isn't reachable"));
+                continue;
+            }
+            results.Add(await SendOneAsync(target, path, ct, (x, y)).ConfigureAwait(false));
+        }
+        if (results.Any(r => r.Ok)) _peers.LastTarget = deviceId;
+        return results;
+    }
+
+    async Task<SendResult> SendOneAsync(SpaceDevice target, string path, CancellationToken ct, (double X, double Y)? at = null)
     {
         var id = Guid.NewGuid().ToString();
         var name = Path.GetFileName(path);
@@ -590,7 +639,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         if (_net.Get(target.Id) is { } link && SenderFor(link) is { } direct)
         {
             var thumb = await ThumbnailAsync(path, kind).ConfigureAwait(false);
-            if (await link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size, thumb, toPeer: true), ct).ConfigureAwait(false))
+            if (await link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size, thumb, toPeer: true, at), ct).ConfigureAwait(false))
             {
                 var r = await direct.SendAsync(path, null, target.Name, id, new Dictionary<string, object?>
                 {

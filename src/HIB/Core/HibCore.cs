@@ -22,6 +22,8 @@ public sealed class HibCoreOptions
     public TimeSpan? ActivityTimeout { get; set; }
     /// <summary>Peer link, activity and Flick-to-phone settings (SPACE.md).</summary>
     public HIB.Core.Space.SpaceOptions Space { get; set; } = new();
+    /// <summary>Shared mouse &amp; keyboard (SPACE.md §9): the input platform (Windows hooks by default).</summary>
+    public HIB.Core.Roam.RoamOptions Roam { get; set; } = new();
 
     static bool DiscoveryDefault()
     {
@@ -68,6 +70,8 @@ public sealed class HibCore : IDisposable
         };
         space.Log += AddLog;
         Space = space;
+        Roam = new HIB.Core.Roam.RoamEngine(space, Link, Options.DataDir, Options.Roam) { Clipboard = () => ClipboardBridge };
+        Roam.Log += AddLog;
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Aim = new PointAim(Link);
         Aim.Log += AddLog;
@@ -92,6 +96,10 @@ public sealed class HibCore : IDisposable
     /// <summary>Every other device (phone + computers): SPACE.md.</summary>
     public HIB.Core.Space.SpaceDirectory Space { get; }
     public ClipboardSync? Clipboard { get; private set; }
+    /// <summary>The desktop clipboard (Roam carries it across on crossings, SPACE.md §9.4).</summary>
+    public IClipboardBridge? ClipboardBridge { get; private set; }
+    /// <summary>Shared mouse &amp; keyboard with another computer (SPACE.md §9).</summary>
+    public HIB.Core.Roam.RoamEngine Roam { get; }
     public UdpPresence? Udp { get; private set; }
     public MdnsAdvertiser? Mdns { get; private set; }
 
@@ -115,6 +123,7 @@ public sealed class HibCore : IDisposable
     public void AttachClipboard(IClipboardBridge bridge, TimeSpan? interval = null)
     {
         Clipboard?.Dispose();
+        ClipboardBridge = bridge;
         Clipboard = new ClipboardSync(Link, Hub, Settings, bridge, interval);
         Clipboard.Log += AddLog;
         Clipboard.Start();
@@ -216,6 +225,7 @@ public sealed class HibCore : IDisposable
         Clipboard?.Dispose();
         Udp?.Dispose();
         Mdns?.Dispose();
+        Roam.Dispose();
         SpaceEngine.Dispose();
         Aim.Dispose();
         Link.Dispose();

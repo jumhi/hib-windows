@@ -1,8 +1,10 @@
 // H.I.B Space (docs/SPACE.md §3.3): accepts and dials peer links, keeps one per computer.
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Threading;
@@ -331,6 +333,33 @@ public sealed class PeerNetwork : IDisposable
         return await helloDone.Task.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Dials with TCP_NODELAY on (SPACE.md §9.3: Roam's small ctl* frames must not wait for Nagle). The server side
+    /// sets it on accept (LinkServer).
+    /// </summary>
+    static readonly HttpMessageInvoker Dialer = new(new SocketsHttpHandler
+    {
+        ConnectCallback = ConnectNoDelayAsync,
+        UseProxy = false,
+        PooledConnectionLifetime = TimeSpan.Zero,
+    });
+
+    /// <summary>Opens the TCP connection for a peer dial with Nagle off.</summary>
+    public static async ValueTask<Stream> ConnectNoDelayAsync(SocketsHttpConnectionContext context, CancellationToken ct)
+    {
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(context.DnsEndPoint, ct).ConfigureAwait(false);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
     async Task<(ClientWebSocket? ws, string ip)> ConnectAsync(string ip, int port, CancellationToken ct)
     {
         var ws = new ClientWebSocket();
@@ -338,7 +367,7 @@ public sealed class PeerNetwork : IDisposable
         try
         {
             var host = IPAddress.TryParse(ip, out var addr) && addr.AddressFamily == AddressFamily.InterNetworkV6 ? $"[{ip}]" : ip;
-            await ws.ConnectAsync(new Uri($"ws://{host}:{port}/peer"), ct).ConfigureAwait(false);
+            await ws.ConnectAsync(new Uri($"ws://{host}:{port}/peer"), Dialer, ct).ConfigureAwait(false);
             return (ws, ip);
         }
         catch

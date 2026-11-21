@@ -143,6 +143,8 @@ public sealed record FlickInfo(string Id, string Kind, string Name, string? Mime
     public bool IsTransferless => Kind is "link" or "text";
     /// <summary>Set when another computer sent this through the phone (multi-desktop relay).</summary>
     public string? From { get; init; }
+    /// <summary>Roam file drag (SPACE.md §9.5): the drop point in this computer's points/DIPs; the card appears there.</summary>
+    public (double X, double Y)? At { get; init; }
 }
 
 public sealed record ReceivedFile(string Id, string Name, string Path, long Size, string? FlickId, bool IsSearchFetch, DateTimeOffset Received)

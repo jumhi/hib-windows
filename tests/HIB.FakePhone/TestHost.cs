@@ -25,7 +25,7 @@ public sealed class TestHost : IAsyncDisposable
     static int _nextPort = int.TryParse(Environment.GetEnvironmentVariable("HIB_PORT"), out var p) ? p : 16996;
 
     public TestHost(TimeSpan? pingInterval = null, TimeSpan? activityTimeout = null, string? name = null,
-        HIB.Core.Space.SpaceOptions? space = null, string? root = null)
+        HIB.Core.Space.SpaceOptions? space = null, string? root = null, HIB.Core.Roam.RoamOptions? roam = null)
     {
         Root = root ?? Path.Combine(Path.GetTempPath(), "hib-tests", Guid.NewGuid().ToString("N")[..8]);
         Downloads = Path.Combine(Root, "Downloads");
@@ -40,6 +40,8 @@ public sealed class TestHost : IAsyncDisposable
             PingInterval = pingInterval,
             ActivityTimeout = activityTimeout,
             Space = space ?? new HIB.Core.Space.SpaceOptions(),
+            // Tests never capture or inject real input.
+            Roam = roam ?? new HIB.Core.Roam.RoamOptions { Platform = () => new HIB.Core.Roam.NullRoamPlatform() },
         });
         Core.Settings.DesktopName = name ?? "Haitham’s PC & Co?=x+y";
         Core.Settings.Save();

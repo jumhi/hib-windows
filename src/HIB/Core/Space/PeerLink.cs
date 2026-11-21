@@ -107,6 +107,9 @@ public sealed class PeerLink : ILinkSession, IDisposable
     public event EventHandler<bool>? ConnectionChanged;
     public event EventHandler<PhoneDeviceInfo>? DeviceUpdated { add { } remove { } }
 
+    /// <summary>A <c>pong</c> came back (Roam's safety watchdog listens; SPACE.md §9.1).</summary>
+    public event Action<PeerLink>? PongReceived;
+
     internal event Action<PeerLink>? HelloCompleted;
     /// <summary>Decides, when the first hello arrives, whether this link is kept (false → closed 4009).</summary>
     internal Func<PeerLink, bool>? Admit;
@@ -260,6 +263,10 @@ public sealed class PeerLink : ILinkSession, IDisposable
                 if (_helloDone) _ = SendAsync("pong");
                 return;
             case "pong":
+                if (_helloDone)
+                {
+                    try { PongReceived?.Invoke(this); } catch { }
+                }
                 return;
         }
 
