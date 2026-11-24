@@ -98,6 +98,7 @@ public partial class PhoneViewModel : ViewModelBase
         _app = app;
         _f = features;
         Adb.PropertyChanged += (_, _) => Ui.Post(Refresh);
+        features.Keeper.PropertyChanged += (_, _) => Ui.Post(Refresh);
         Mirror.PropertyChanged += (_, _) => Ui.Post(Refresh);
         app.Core.Hub.AppsChanged += () => Ui.Post(LoadApps);
         app.Core.Link.ConnectionChanged += (_, _) => Ui.Post(Refresh);
@@ -134,8 +135,11 @@ public partial class PhoneViewModel : ViewModelBase
               + "should be in its tools folder but isn't. Run H.I.B-Setup.exe again to repair it, then press Check again."
             : $"adb: {adbPath}\nscrcpy: {scrcpy}";
         PhoneConnected = _app.Core.Link.IsConnected;
-        AdbStatus = Adb.IsConnecting ? "Connecting…"
-            : Adb.IsConnected ? $"Connected over ADB · {(Adb.Mode == AdbConnectionMode.Wired ? Adb.CurrentSerial : $"{Adb.ConnectedIp}:{Adb.Port}")}"
+        // SPACE.md §13: quiet — "ADB · connected" / "ADB · reconnecting…", with the last reason, never a toast.
+        var keeper = _f.Keeper;
+        AdbStatus = Adb.IsConnected ? $"ADB · connected · {(Adb.Mode == AdbConnectionMode.Wired ? Adb.CurrentSerial : $"{Adb.ConnectedIp}:{Adb.Port}")}"
+            : keeper.State == AdbKeeperState.Reconnecting ? keeper.Status + (keeper.Detail is { Length: > 0 } why ? " · " + why.Split('\n')[0] : "")
+            : Adb.IsConnecting ? "Connecting…"
             : Adb.LastResult is { Length: > 0 } r ? $"Not connected · {r}" : "Not connected";
     }
 

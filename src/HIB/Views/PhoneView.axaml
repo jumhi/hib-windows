@@ -46,7 +46,7 @@
           <Border Classes="divider"/>
           <Grid ColumnDefinitions="Auto,*,Auto">
             <c:Icon Data="{x:Static vm:Icons.RefreshCw}" Classes="muted" Margin="0,0,10,0"/>
-            <TextBlock Grid.Column="1" Text="Connect ADB by itself when the phone connects" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock Grid.Column="1" Text="Keep ADB connected (reconnects by itself after a network change)" VerticalAlignment="Center" TextWrapping="Wrap"/>
             <ToggleSwitch Grid.Column="2" IsChecked="{Binding AutoConnect}"/>
           </Grid>
           <Grid ColumnDefinitions="Auto,*,Auto">

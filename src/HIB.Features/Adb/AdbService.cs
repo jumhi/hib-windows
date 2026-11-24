@@ -82,6 +82,9 @@ public sealed class AdbService : ObservableObject
     /// offers "Set up mirroring".</summary>
     public event Action<AdbConnectResult>? ConnectionFailed;
 
+    /// <summary>Raises <see cref="ConnectionFailed"/> for a connect made with <c>notify: false</c> (the keeper's final answer).</summary>
+    internal void NotifyFailed(AdbConnectResult r) => ConnectionFailed?.Invoke(r);
+
     /// <summary>
     /// The adb serial H.I.B should talk to: the wired cable when it's enabled and chosen, otherwise the
     /// wireless ip:port (PhoneADBTarget.currentSerial).
@@ -128,6 +131,9 @@ public sealed class AdbService : ObservableObject
 
     /// <summary>Tests: answers adb commands instead of a real adb (nothing touches a phone).</summary>
     internal Func<IReadOnlyList<string>, CancellationToken, Task<ProcessResult>>? CommandRunner { get; set; }
+
+    /// <summary>The short pause before and between <c>adb connect</c> attempts (tests set it to zero).</summary>
+    internal TimeSpan ConnectPause { get; set; } = TimeSpan.FromMilliseconds(500);
 
     /// <summary>adb is available (the bundled one, normally).</summary>
     public bool HasAdb => CommandRunner is not null || AdbPath is not null;
@@ -360,7 +366,7 @@ public sealed class AdbService : ObservableObject
             }
 
             Log($"Proceeding with ADB connection attempts to {ip}...");
-            await Task.Delay(500, ct).ConfigureAwait(false);
+            if (ConnectPause > TimeSpan.Zero) await Task.Delay(ConnectPause, ct).ConfigureAwait(false);
             var failures = new List<string>();
             for (var i = 0; i < ports.Count; i++)
             {
@@ -382,7 +388,7 @@ public sealed class AdbService : ObservableObject
                 }
                 Log($"Port {ports[i]} failed, trying next...");
                 failures.Add($"{address}: {output}");
-                if (i + 1 < ports.Count) await Task.Delay(500, ct).ConfigureAwait(false);
+                if (i + 1 < ports.Count && ConnectPause > TimeSpan.Zero) await Task.Delay(ConnectPause, ct).ConfigureAwait(false);
             }
 
             IsConnected = false;
@@ -398,6 +404,21 @@ public sealed class AdbService : ObservableObject
             IsConnecting = false;
             Interlocked.Exchange(ref _connecting, 0);
         }
+    }
+
+    /// <summary>
+    /// Restarts the adb server from H.I.B (<c>kill-server</c>, then <c>start-server</c>), so the new server runs as
+    /// H.I.B's own child: on macOS it inherits H.I.B's Local Network permission, and on any system it drops a server
+    /// stuck on an old network (SPACE.md §13).
+    /// </summary>
+    public async Task<bool> RestartServerAsync(CancellationToken ct = default)
+    {
+        if (!HasAdb) return false;
+        Log("Restarting the ADB server from H.I.B...");
+        await RunAsync(["kill-server"], TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        var r = await RunAsync(["start-server"], TimeSpan.FromSeconds(15), ct).ConfigureAwait(false);
+        Log(r.ExitCode == 0 ? "ADB server restarted." : "ADB server didn't start: " + r.Combined.Trim());
+        return r.ExitCode == 0;
     }
 
     /// <summary>
