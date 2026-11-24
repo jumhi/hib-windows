@@ -731,6 +731,33 @@ virtual cursor drift to the edge and the mouse fell back to the Mac mid-game.
 - **Key repeat:** forward the controller's auto-repeat key-downs; the target injects each (Windows doesn't
   auto-repeat injected keys on its own).
 
+### 12.6 Settled (both apps)
+- **Gate:** measured on the screen the cursor is on — the top 15 % of a left/right edge, the left-most 15 % of a
+  top/bottom edge, at least 60 px, never longer than the edge; a neighbour (portal or §9.2 edge) is still needed there.
+- **Double push:** a push = a crossing attempt inside the gate. The second must come ≤ 500 ms after the last event of
+  the first, after moving back ≥ 3 px from the edge. Pushes outside the gate never count (they may show the pill).
+- **`ctlRel`:** `dx`/`dy` whole counts, screen axes (dy > 0 = down), pointer speed already applied, fractions
+  carried by the controller; receivers accept floats. While a frame is in flight relative motion is summed, never
+  dropped; absolute `ctlMove` keeps only the newest.
+- **`ctlTargetState`:** sent on every peer link-up (even `normal`) and on change; unknown modes read as `normal`.
+  Game mode off on a computer = it reports `normal` and ignores the other's state.
+- **Game mode exits:** the lock hotkey in game mode sends the cursor home to where it left (with `ctlLeave`). When
+  the target goes back from `locked`, the controller puts its virtual cursor at the centre of that screen.
+- **`ctlScreenLock`:** sent to linked computers with Roam on for the pair when the sender's "Lock together" is on;
+  obeyed only when the receiver's own setting is on and its screen isn't locked yet; a lock caused by
+  `ctlScreenLock` doesn't send one back (5 s quiet).
+- **Clipboard:** one of `{"text":…}` or `{"png":"<base64>"}`; text wins when the clipboard has both; PNG ≤ 8 000 000
+  bytes before base64, else nothing is carried; receivers ignore data that isn't a PNG.
+- **Key repeat:** a repeat is just `ctlKey` down again with the same usage (no extra field).
+- **Jump:** lands at the centre of the main screen (origin 0,0, else the first listed). With a room, "on that side"
+  compares group centres (nearest first); without one, the §9.2 side. The hotkey's own key (L / arrow) never
+  reaches the target; modifiers already sent are released as usual.
+- **Latency:** each side times its own pings (pings carry no id; each pong matches the oldest outstanding ping).
+  The Mac pings each linked Roam computer every 3 s (0.5 s while controlling).
+- **Mac log:** `~/Library/Logs/H.I.B/H.I.B.log` keeps console lines starting `[roam`, `[room`, `[peer`, `[space`,
+  `[adb…`, `[scrcpy…`, `[diag`, `[hib`, each prefixed `YYYY-MM-DD HH:MM:SS.mmm `; past 2 MB the newest 1 MB stays.
+  "Get log" saves to `<name>.log` with `/`, `:` and `\` in the name replaced by `-`.
+
 ## 13. ADB that stays connected (Mac and Windows)
 Whenever the phone link is up and this computer has ever had ADB working with this phone (or the phone's
 `adbSetupState` says Wireless debugging is on), keep ADB connected without any button:
