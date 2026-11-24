@@ -37,11 +37,12 @@ You need: a Windows 10/11 PC and an Android phone (Android 11+), on the same Wi-
 
 - Phone notifications on the PC, with replies and actions
 - Calls, clipboard both ways, media controls, battery
-- **Flick:** point your phone at the PC (or any of its screens) and throw anything onto it;
+- **Flick:** point your phone at the PC (or any of its screens) and throw anything onto it — many at once
+  land as one stack that fans out when you click it;
   flick files back to the phone or to your other computers
 - **Devices:** send files and text between the phone and every computer
 - **One mouse and keyboard for your computers:** push the cursor off the edge toward your other computer
-  and keep working there, typing included; drag files across the edge
+  and keep working there, typing included; drag files across the edge; games keep the mouse (game mode), and ⌃⌥⌘L / Scroll Lock locks it to one computer
 - **Your desk, drawn for real:** every display at its true size and shape (an ultrawide is a long bar, a
   MacBook is a laptop); drag computers into place and the mouse follows that arrangement
 - **Point to act:** point the phone at a computer and the Desk Deck, Remote, Scenes and media controls

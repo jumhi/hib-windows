@@ -12,7 +12,7 @@
     <Company>Haitham Hamid</Company>
     <Authors>Haitham Hamid</Authors>
     <Copyright>Made by Haitham Hamid</Copyright>
-    <Version>1.5.0</Version>
+    <Version>1.6.0</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Single-file publish: extract native libs (Skia/HarfBuzz) next to the exe at first run. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
