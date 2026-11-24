@@ -84,6 +84,9 @@ public sealed partial class FlickCardManager
     readonly HashSet<string> _finishedBundles = new();
     bool _escDown;
     bool _mouseDown;
+    /// <summary>A Flick context menu is open (or just closed): its clicks land outside our windows but aren't "elsewhere".</summary>
+    int _menusOpen;
+    DateTime _menuClosedAt;
 
     // ---------------- public (UI thread) ----------------
 
@@ -164,6 +167,8 @@ public sealed partial class FlickCardManager
             Thumbnail = thumb,
             Text = f.Text,
             From = f.From,
+            // A note in a bundle isn't copied on landing (which one would it be?): clicking its card copies it.
+            SubtitleOverride = kind == "text" ? "Click to copy" : null,
         };
         // The transfer beat its flickStart and brought a single card in: that card joins the stack instead.
         if (_cards.TryGetValue(f.Id, out var single))
@@ -395,7 +400,18 @@ public sealed partial class FlickCardManager
             }
             args.Handled = true;
         };
-        face.ContextMenu = BuildStackMenu(s);
+        face.ContextMenu = Tracked(BuildStackMenu(s));
+    }
+
+    ContextMenu Tracked(ContextMenu menu)
+    {
+        menu.Opened += (_, _) => _menusOpen++;
+        menu.Closed += (_, _) =>
+        {
+            _menusOpen = Math.Max(0, _menusOpen - 1);
+            _menuClosedAt = DateTime.UtcNow;
+        };
+        return menu;
     }
 
     ContextMenu BuildStackMenu(StackEntry s)
@@ -773,7 +789,7 @@ public sealed partial class FlickCardManager
             c.Press = null;
             if (clicked) OpenFanCard(s, fan, c);
         };
-        face.ContextMenu = BuildFanCardMenu(s, fan, c);
+        face.ContextMenu = Tracked(BuildFanCardMenu(s, fan, c));
     }
 
     void HoverFanCard(Fan fan, FanCard c, bool hovered)
@@ -924,7 +940,8 @@ public sealed partial class FlickCardManager
         if (esc && !_escDown) GatherAll();
         _escDown = esc;
         var mouse = FlickInput.IsDown(FlickInput.VkLButton) || FlickInput.IsDown(FlickInput.VkRButton);
-        if (mouse && !_mouseDown && GlobalCursor.Position is { } p && !OverFlickWindow(p)) GatherAll();
+        var menu = _menusOpen > 0 || (DateTime.UtcNow - _menuClosedAt).TotalMilliseconds < 400;
+        if (mouse && !_mouseDown && !menu && GlobalCursor.Position is { } p && !OverFlickWindow(p)) GatherAll();
         _mouseDown = mouse;
     }
 

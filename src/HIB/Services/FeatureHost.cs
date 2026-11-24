@@ -169,7 +169,8 @@ public sealed class FeatureHost : IDisposable
             PhoneKey = () => core.Link.Device is { } d ? (d.Id is { Length: > 0 } id ? id : d.Name) : null,
             Setup = () => core.Hub.AdbSetup,
             DevicePorts = () => core.Link.Device?.AdbPorts ?? Array.Empty<string>(),
-            Paused = () => Pairing.IsBusy,
+            // The "Set up mirroring" card drives its own connects (and pairing) while it is open.
+            Paused = () => Pairing.IsBusy || (Setup?.IsOpen ?? false),
             AskForPorts = () => core.Link.SendAsync("refreshAdbPorts"),
         }, Settings);
         // The device message: a new address or other adbPorts (an older phone app, or the answer to refreshAdbPorts).

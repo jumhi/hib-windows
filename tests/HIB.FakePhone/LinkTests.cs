@@ -240,7 +240,8 @@ public class FeatureTests
         await using var phone = await host.ConnectPhoneAsync();
         var art = Convert.ToBase64String(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
         await phone.SendPlainAsync("{\"type\":\"status\",\"data\":{\"battery\":{\"level\":82,\"isCharging\":true},\"isPaired\":true,\"music\":{\"isPlaying\":true,\"title\":\"Song \"Live\"\",\"artist\":\"Artist\",\"volume\":60,\"isMuted\":false,\"albumArt\":\"" + art + "\",\"duration\":215000,\"position\":42000,\"positionTimestamp\":0,\"isBuffering\":false,\"likeStatus\":\"none\"}}}");
-        Assert.True(await Eventually.TrueAsync(() => host.Core.Link.Device?.BatteryLevel == 82));
+        // The link reads the battery before the hub sees the message: wait for both.
+        Assert.True(await Eventually.TrueAsync(() => host.Core.Link.Device?.BatteryLevel == 82 && host.Core.Hub.NowPlaying is not null));
         Assert.True(host.Core.Link.Device!.IsCharging);
         var np = host.Core.Hub.NowPlaying!;
         Assert.Equal("Song \"Live\"", np.Title);

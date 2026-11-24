@@ -752,6 +752,10 @@ Whenever the phone link is up and this computer has ever had ADB working with th
   6 = 3×2 · 7 = 2-3-2 · 8 = 3-2-3 · 9 = 3×3 · 10+ = a grid with a "+N" card that opens the folder.
   Fanned cards work like single cards (click opens, drag out). A small "Gather" control (or Esc, or clicking
   empty space) stacks them again; dragging the **stack** drags all files at once.
+- **Layout details (Windows, for the Mac to match):** one unit = a card plus a 22 pt gap; dice-five nests the middle
+  card half a row between the corners; 10+ is the 3×3 grid where the 9th place is "+N" (N = count − 8); the fan
+  moves to stay on screen and shrinks (never below 45 %) when it can't fit; a soft ink/cyan halo behind the cards is
+  the "empty space" that gathers on click; the Gather pill also offers Show in folder.
 - Files of a bundle are saved together under Downloads (as today) and the card shows progress for the whole
   bundle until all arrived.
 - **Computer → phone:** a bundle arrives as one notification "5 photos from <name>" with a preview strip; tapping
