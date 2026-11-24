@@ -357,6 +357,13 @@ public class RoamRound2Tests
         Assert.Equal(RoamPush.First, g.Feed(e, true, 0, t.AddSeconds(2)));
         g.Feed(e, false, 10, t.AddMilliseconds(2300));
         Assert.Equal(RoamPush.First, g.Feed(e, true, 0, t.AddMilliseconds(2600)));
+        // §12.6: the 500 ms count from the last event of the first push, however long it lasted.
+        g.Reset();
+        var u = t.AddSeconds(10);
+        Assert.Equal(RoamPush.First, g.Feed(e, true, 0, u));
+        Assert.Equal(RoamPush.None, g.Feed(e, true, 0, u.AddMilliseconds(800))); // still pushing
+        g.Feed(e, false, 12, u.AddMilliseconds(900));
+        Assert.Equal(RoamPush.Cross, g.Feed(e, true, 0, u.AddMilliseconds(1100)));
     }
 
     [Fact]
@@ -364,12 +371,16 @@ public class RoamRound2Tests
     {
         var (c, h, clock) = Controller(Mac());
         c.SetLocalGame(RoamGameMode.Fullscreen);
-        c.Handle(RoamInput.Pointer(1925, 540, false)); // mid edge: closed
+        c.Handle(RoamInput.Pointer(1925, 540, false)); // mid edge: closed; the pill points at the gate
         Assert.Null(h.Entered);
-        Assert.Empty(h.Pills);
+        Assert.Equal(RoamPillKind.Gate, Assert.Single(h.Pills)!.Kind);
+        c.Handle(RoamInput.Pointer(1900, 540, false));
+        c.Handle(RoamInput.Pointer(1925, 540, false)); // pushes outside the gate never count
+        Assert.Null(h.Entered);
         c.Handle(RoamInput.Pointer(1925, 100, false)); // the gate: first push
         Assert.Null(h.Entered);
-        var pill = Assert.Single(h.Pills)!;
+        Assert.Equal(2, h.Pills.Count);
+        var pill = h.Pills.Last()!;
         Assert.Equal(RoamPillKind.Gate, pill.Kind);
         Assert.Equal("Game running — push again here to leave", pill.Text);
         Assert.Equal((0.0, 162.0), (pill.At!.SegStart, pill.At.SegEnd));
@@ -438,11 +449,12 @@ public class RoamRound2Tests
         Assert.Equal(start, c.Virtual); // frozen
         Assert.Empty(h.Moves);
 
-        // The game shows its cursor again: back to absolute moves.
+        // The game shows its cursor again: back to absolute moves, from the centre of that screen (§12.6).
         c.SetNeighbors(new[] { Mac(RoamGameMode.Fullscreen) });
         Assert.Null(h.Pills.Last());
+        Assert.Equal((756.0, 491.0), Assert.Single(h.Moves));
         c.Handle(RoamInput.Motion(10, 0));
-        Assert.Single(h.Moves);
+        Assert.Equal((766.0, 491.0), h.Moves.Last());
 
         // Locked again: the lock hotkey leaves the game (the mouse comes home).
         c.SetNeighbors(new[] { Mac(RoamGameMode.Locked) });
@@ -480,6 +492,11 @@ public class RoamRound2Tests
         await mac.SendRawAsync("""{"type":"ctlRel","data":{"dx":12,"dy":-3}}""");
         Assert.True(await Eventually.TrueAsync(() => pc.Rels.Count == 1));
         Assert.Equal((12, -3), pc.Rels[0]);
+        // Floats are accepted; the fractions add up (§12.6).
+        await mac.SendRawAsync("""{"type":"ctlRel","data":{"dx":0.5,"dy":0}}""");
+        await mac.SendRawAsync("""{"type":"ctlRel","data":{"dx":0.5,"dy":-0.25}}""");
+        Assert.True(await Eventually.TrueAsync(() => pc.Rels.Count == 2));
+        Assert.Equal((1, 0), pc.Rels[1]);
         await mac.SendRawAsync("""{"type":"ctlLeave","data":{"clipboard":null}}""");
         Assert.True(await Eventually.TrueAsync(() => host.Core.Roam.ControlledById is null));
 
@@ -632,6 +649,10 @@ public class RoamRound2Tests
         c.Handle(RoamInput.Scroll(0, 1));   // −0.5 more: −1
         var wheels = h.Sent.Where(m => m.Type == RoamWire.Wheel).Select(m => ((int)m.Data["dx"]!, (int)m.Data["dy"]!)).ToList();
         Assert.Equal(new[] { (0, -60), (0, -1) }, wheels);
+        // §12.5 key repeat: every auto-repeated down from this keyboard goes across.
+        for (var i = 0; i < 3; i++) c.Handle(RoamInput.KeyEvent(0x04, true));
+        c.Handle(RoamInput.KeyEvent(0x04, false));
+        Assert.Equal(new[] { true, true, true, false }, h.Sent.Where(m => m.Type == RoamWire.Key).Select(m => (bool)m.Data["down"]!));
         Assert.Equal(0.5, RoamSpeed.Clamp(0.1));
         Assert.Equal(2, RoamSpeed.Clamp(9));
         Assert.Equal(1, RoamSpeed.Clamp(double.NaN));
@@ -732,7 +753,7 @@ public class RoamRound2Tests
         await mac.SendAsync("peerDiagLog", new { version = "4.2.0", text = "12:00:01 [roam] Roam keys (10 s): captured 3 · sent 3\n" });
         var (path, problem) = await fetch;
         Assert.Null(problem);
-        Assert.Equal(Path.Combine(dir, "Haitham’s MacBook_ Pro.log"), path);
+        Assert.Equal(Path.Combine(dir, "Haitham’s MacBook- Pro.log"), path);
         var saved = File.ReadAllText(path!);
         Assert.StartsWith("# H.I.B log from Haitham’s MacBook: Pro (H.I.B 4.2.0)", saved);
         Assert.Contains("captured 3 · sent 3", saved);
@@ -742,6 +763,6 @@ public class RoamRound2Tests
         var silent = await PeerDiagnostics.FetchAsync(host.Core.SpaceEngine.Network, "Haitham’s MacBook: Pro", "Haitham’s MacBook: Pro", dir, TimeSpan.FromMilliseconds(300));
         Assert.Equal("Haitham’s MacBook: Pro didn't send its log", silent.Problem);
         Assert.Equal("hib (peer).log", PeerDiagnostics.FileNameFor("hib"));
-        Assert.Equal("a_b_c.log", PeerDiagnostics.FileNameFor("a/b\\c"));
+        Assert.Equal("a-b-c.log", PeerDiagnostics.FileNameFor("a/b\\c"));
     }
 }

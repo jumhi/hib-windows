@@ -23,6 +23,7 @@ public sealed partial class RoamEngine
     readonly MouseKeysKeeper _mouseKeys;
     readonly RoamKeyStats _stats = new();
     readonly LockTogether _lockTogether = new();
+    readonly RoamDelta _relIn = new();
     readonly object _chainGate = new();
     Task _systemChain = Task.CompletedTask;
     Timer? _housekeeping;

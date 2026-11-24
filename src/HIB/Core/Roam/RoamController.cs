@@ -300,8 +300,7 @@ public sealed class RoamController
                 return;
             }
             var horizontal = RoamSides.IsHorizontal(n.Side);
-            var (s0, s1) = horizontal ? (_bounds.Y, _bounds.Bottom) : (_bounds.X, _bounds.Right);
-            if (!GateOpen(n.Side, _bounds, horizontal ? cy : cx, s0, s1, scale, null, n, screen, now)) return;
+            if (!GateOpen(n.Side, screen, horizontal ? cy : cx, scale, null, n, screen, now)) return;
             Cross(n, cx, cy, scale);
             return;
         }
@@ -405,13 +404,7 @@ public sealed class RoamController
                 WaitForDrag(new RoamEdgeHint(side, n.PeerId, n.Name, screen, RoamSides.IsHorizontal(side) ? cy : cx), now);
                 return true;
             }
-            if (Gated(null))
-            {
-                var s = display.SafeScale;
-                var (g0, g1) = _room.Segment(c.Portal) is { } seg ? (seg.Start * s, seg.End * s)
-                    : RoamSides.IsHorizontal(side) ? (screen.Y, screen.Bottom) : (screen.X, screen.Right);
-                if (!GateOpen(side, screen, RoamSides.IsHorizontal(side) ? cy : cx, g0, g1, scale, null, n, screen, now)) return true;
-            }
+            if (!GateOpen(side, screen, RoamSides.IsHorizontal(side) ? cy : cx, scale, null, n, screen, now)) return true;
             Enter(n, c.X, c.Y, side, cx, cy, scale);
             return true;
         }
@@ -526,9 +519,12 @@ public sealed class RoamController
             var ok = RoamGeometry.AtEdge(home, cx, cy, tb)
                      && !RoamGeometry.InCorner(home, cx, cy, t.Screens, RoamGeometry.CornerSize)
                      && (_heldButtons.Count == 0 || _dragAway);
-            var horizontal = RoamSides.IsHorizontal(home);
             if (ok && Gated(t))
-                ok = GateOpen(home, tb, horizontal ? cy : cx, horizontal ? tb.Y : tb.X, horizontal ? tb.Bottom : tb.Right, 1, t, t, null, _clock());
+            {
+                // §12.6: the gate is measured on the screen the cursor is on.
+                var on = t.Screens[Math.Max(0, RoamGeometry.ScreenAt(cx, cy, t.Screens))];
+                ok = GateOpen(home, on, RoamSides.IsHorizontal(home) ? cy : cx, 1, t, t, null, _clock());
+            }
             if (ok)
             {
                 var ratio = RoamGeometry.EdgeRatio(home, cx, cy, tb);
@@ -571,13 +567,7 @@ public sealed class RoamController
                 var (cx, cy) = cur.Dips.Clamp(nx, ny);
                 var ok = !RoamGeometry.InCorner(side, cx, cy, new[] { cur.Dips }, RoamGeometry.CornerSize) && (_heldButtons.Count == 0 || _dragAway);
                 var c = ok ? _room.Cross(t.PeerId, cur.Id, side, cx, cy, id => IsOwn(id) || (!_dragAway && IsRoomTarget(id) && !SpaceIds.Same(id, t.PeerId))) : null;
-                if (c is not null && Gated(t))
-                {
-                    var horizontal = RoamSides.IsHorizontal(side);
-                    var (g0, g1) = _room.Segment(c.Portal) is { } seg ? (seg.Start, seg.End)
-                        : horizontal ? (cur.Dips.Y, cur.Dips.Bottom) : (cur.Dips.X, cur.Dips.Right);
-                    if (!GateOpen(side, cur.Dips, horizontal ? cy : cx, g0, g1, 1, t, t, null, _clock())) c = null;
-                }
+                if (c is not null && !GateOpen(side, cur.Dips, RoamSides.IsHorizontal(side) ? cy : cx, 1, t, t, null, _clock())) c = null;
                 if (c is not null)
                 {
                     if (IsOwn(c.Portal.ToComputer))
@@ -718,21 +708,28 @@ public sealed class RoamController
     // ---------------- round 2: gate, game mode, wheel, hotkeys (§12.4–§12.5) ----------------
 
     /// <summary>
-    /// With a full-screen app on either side, may the cursor cross this edge now? Only inside the gate (the first 15 % of the
-    /// edge segment <paramref name="s0"/>…<paramref name="s1"/>, at least 60 points) and on the second push within 500 ms; the
-    /// first push shows "Game running — push again here to leave".
+    /// Leaving a computer with a full-screen app in front (SPACE.md §12.4, §12.6): may the cursor cross this edge of
+    /// <paramref name="screen"/> (the one it is on) now? Only inside the gate — the top 15 % of a left/right edge, the left-most
+    /// 15 % of a top/bottom edge, at least 60 points (<paramref name="unit"/> = pixels per point) — and on the second push within
+    /// 500 ms of the first. The first push shows "Game running — push again here to leave"; a push outside the gate only shows it
+    /// (at the gate) and never counts.
     /// </summary>
-    bool GateOpen(RoamSide side, RoamRect edge, double along, double s0, double s1, double unit, RoamNeighbor? away, RoamNeighbor n,
+    bool GateOpen(RoamSide side, RoamRect screen, double along, double unit, RoamNeighbor? away, RoamNeighbor n,
         RoamRect? homeScreen, DateTime now)
     {
         if (!Gated(away)) return true;
-        if (!RoamGate.Contains(along, s0, s1, unit)) return false;
-        var key = (side, edge);
+        var (s0, s1) = RoamSides.IsHorizontal(side) ? (screen.Y, screen.Bottom) : (screen.X, screen.Right);
+        if (!RoamGate.Contains(along, s0, s1, unit))
+        {
+            if (_pill?.Kind != RoamPillKind.Gate) SetPill(new RoamPill(RoamPillKind.Gate, RoamPill.GateText, GateHint(side, n, homeScreen, s0, s1, unit)));
+            return false;
+        }
+        var key = (side, screen);
         _pushEdge = key;
         switch (_push.Feed(key, true, 0, now))
         {
             case RoamPush.First:
-                SetPill(new RoamPill(RoamPillKind.Gate, RoamPill.GateText, GateHint(side, n, homeScreen, along, s0, s1, unit)));
+                SetPill(new RoamPill(RoamPillKind.Gate, RoamPill.GateText, GateHint(side, n, homeScreen, s0, s1, unit)));
                 return false;
             case RoamPush.Cross:
                 if (_pill?.Kind == RoamPillKind.Gate) SetPill(null);
@@ -743,12 +740,12 @@ public sealed class RoamController
     }
 
     /// <summary>Where the gate pill shows: at the gate at home; away, at the top of the edge this PC was left by.</summary>
-    RoamEdgeHint GateHint(RoamSide side, RoamNeighbor n, RoamRect? homeScreen, double along, double s0, double s1, double unit)
+    RoamEdgeHint GateHint(RoamSide side, RoamNeighbor n, RoamRect? homeScreen, double s0, double s1, double unit)
     {
         if (homeScreen is { } screen)
         {
             var (g0, g1) = RoamGate.Of(s0, s1, unit);
-            return new RoamEdgeHint(side, n.PeerId, n.Name, screen, along, g0, g1);
+            return new RoamEdgeHint(side, n.PeerId, n.Name, screen, (g0 + g1) / 2, g0, g1);
         }
         var exitScreen = ExitScreen();
         var scale = RoamGeometry.ScaleAt(_exit.X, _exit.Y, _displays);
@@ -772,7 +769,19 @@ public sealed class RoamController
         _push.Reset();
         _pushEdge = null;
         if (now.Game == RoamGameMode.Locked) SetPill(GamePill(now));
-        else if (before == RoamGameMode.Locked && _pill?.Kind == RoamPillKind.GameMode) SetPill(null);
+        else if (before == RoamGameMode.Locked)
+        {
+            if (_pill?.Kind == RoamPillKind.GameMode) SetPill(null);
+            // §12.6: the game let go of its cursor — the virtual cursor starts again from the centre of that screen.
+            var rects = now.InRoom && _room.Has(now.PeerId) ? _room.Of(now.PeerId).Select(x => x.Dips).ToList() : now.Screens;
+            if (rects.Count > 0)
+            {
+                var on = rects[Math.Max(0, RoamGeometry.ScreenAt(_vx, _vy, rects))];
+                _vx = Math.Round(on.X + on.W / 2);
+                _vy = Math.Round(on.Y + on.H / 2);
+                _host.Move(now.PeerId, _vx, _vy);
+            }
+        }
     }
 
     /// <summary>§12.3 / §12.5: the wheel at the target's scroll speed (natural scrolling reverses it), fractions carried over.</summary>
@@ -831,44 +840,61 @@ public sealed class RoamController
         _ => dy > 0 && Math.Abs(dy) > Math.Abs(dx),
     };
 
-    /// <summary>The centre of a computer's main screen (the one at its origin, else the first), its points.</summary>
+    /// <summary>The centre of a computer's main screen (the one at its origin 0,0, else the first listed), its points.</summary>
     static (double X, double Y) MainCentre(RoamNeighbor n)
     {
-        var main = n.Screens.FirstOrDefault(r => r.Contains(0, 0));
+        var main = n.Screens.FirstOrDefault(r => r.X == 0 && r.Y == 0);
         if (main.IsEmpty) main = n.Screens[0];
         return (Math.Round(main.X + main.W / 2), Math.Round(main.Y + main.H / 2));
     }
 
+    /// <summary>
+    /// §12.5 jump: to the computer on that side of the one the cursor is on, landing at the centre of its main screen. With a room
+    /// (§12.6) "on that side" compares group centres, nearest first; without one, the §9.2 sides (this PC at 0,0, each other computer
+    /// one step towards its side).
+    /// </summary>
     void Jump(RoamSide side)
     {
         _userLock = false;
-        if (_target is not { } t)
+        if (_pixels.Count == 0) return;
+        var fromId = _target?.PeerId ?? _own;
+        var room = _room.Screens.Count > 0 && _room.Has(fromId) && (_target is null || _target.InRoom);
+        (double X, double Y)? Place(RoamNeighbor? c)
         {
-            var n = _neighbors.FirstOrDefault(x => x.Side == side && x.Screens.Count > 0);
-            if (n is null || _pixels.Count == 0) return;
-            var (vx, vy) = MainCentre(n);
-            var here = _lastPointer == default ? ParkPoint() : _lastPointer;
-            Enter(n, vx, vy, n.Side, here.X, here.Y, RoamGeometry.ScaleAt(here.X, here.Y, _displays));
-            return;
+            if (room)
+            {
+                var id = c?.PeerId ?? _own;
+                if (c is { InRoom: false } || !_room.Has(id)) return null;
+                var b = _room.BoundsOf(id);
+                return b.IsEmpty ? null : (b.X + b.W / 2, b.Y + b.H / 2);
+            }
+            return c is null ? (0, 0) : c.InRoom ? null : Unit(c.Side);
         }
-        // Away on t: this PC sits opposite t's side; every other computer on its own side of this PC.
-        var tp = Unit(t.Side);
+        if (Place(_target) is not { } from) return;
         (RoamNeighbor? To, double Distance)? best = null;
-        foreach (var c in _neighbors.Where(x => !SpaceIds.Same(x.PeerId, t.PeerId) && x.Screens.Count > 0).Cast<RoamNeighbor?>().Append(null))
+        var candidates = _neighbors.Where(x => x.Screens.Count > 0 && (_target is null || !SpaceIds.Same(x.PeerId, _target.PeerId))).Cast<RoamNeighbor?>();
+        if (_target is not null) candidates = candidates.Append(null); // this PC
+        foreach (var c in candidates)
         {
-            var (px, py) = c is null ? (0.0, 0.0) : Unit(c.Side);
-            var (dx, dy) = (px - tp.X, py - tp.Y);
+            if (Place(c) is not { } at) continue;
+            var (dx, dy) = (at.X - from.X, at.Y - from.Y);
             if (!Toward(side, dx, dy)) continue;
             var d = dx * dx + dy * dy;
             if (best is null || d < best.Value.Distance) best = (c, d);
         }
         if (best is not { } pick) return;
-        if (pick.To is null) ComeHome(ParkPoint(), sendLeave: true);
-        else
+        if (pick.To is null)
         {
-            var (vx, vy) = MainCentre(pick.To);
-            SwitchTarget(pick.To, vx, vy);
+            ComeHome(ParkPoint(), sendLeave: true);
+            return;
         }
+        var (vx, vy) = MainCentre(pick.To);
+        if (_target is null)
+        {
+            var here = _lastPointer == default ? ParkPoint() : _lastPointer;
+            Enter(pick.To, vx, vy, side, here.X, here.Y, RoamGeometry.ScaleAt(here.X, here.Y, _displays));
+        }
+        else SwitchTarget(pick.To, vx, vy);
     }
 
     void SetPill(RoamPill? pill)

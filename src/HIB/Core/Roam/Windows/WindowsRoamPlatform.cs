@@ -53,8 +53,9 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
     long _failures;
     long _lastFailureLog;
 
-    // Injection: the virtual desktop in pixels (set by the engine from Avalonia's screens).
-    RoamRect _desktop;
+    // Injection: the virtual desktop in pixels (set by the engine from Avalonia's screens; read on the input thread,
+    // so it is swapped as a whole).
+    RoamRect[] _desktop = { default };
 
     public WindowsRoamPlatform()
     {
@@ -74,7 +75,8 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
     public Action<string>? Log { get; set; }
 
     /// <summary>The virtual desktop in pixels (the monitors' union), for absolute SendInput moves.</summary>
-    public void SetDisplays(IReadOnlyList<RoamDisplay> displays) => _desktop = RoamGeometry.Bounds(System.Linq.Enumerable.Select(displays, d => d.Pixels));
+    public void SetDisplays(IReadOnlyList<RoamDisplay> displays)
+        => Volatile.Write(ref _desktop, new[] { RoamGeometry.Bounds(System.Linq.Enumerable.Select(displays, d => d.Pixels)) });
 
     public void SetMode(RoamInputMode mode)
     {
@@ -423,7 +425,7 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
 
     public void InjectMove(double px, double py)
     {
-        var d = _desktop;
+        var d = Volatile.Read(ref _desktop)[0];
         if (d.IsEmpty)
         {
             d = new RoamRect(GetSystemMetrics(76), GetSystemMetrics(77), GetSystemMetrics(78), GetSystemMetrics(79));

@@ -70,9 +70,9 @@ public static class RoamGate
 public enum RoamPush { None, First, Cross }
 
 /// <summary>
-/// Two pushes at an edge within <see cref="Window"/> (Deskflow's switch double-tap): the first push arms it; the cursor must
-/// leave the edge (at least <see cref="AwayDistance"/>) and come back within the window to cross. Staying pressed against the
-/// edge is one push.
+/// Two pushes at an edge (Deskflow's switch double-tap; SPACE.md §12.6): a push is a crossing attempt inside the gate. The second
+/// must come within <see cref="Window"/> of the last event of the first, after the cursor moved back at least
+/// <see cref="AwayDistance"/> from the edge. Staying pressed against the edge is one push.
 /// </summary>
 public sealed class DoublePushGate
 {
@@ -80,6 +80,7 @@ public sealed class DoublePushGate
     public const double AwayDistance = 3;
 
     DateTime? _first;
+    DateTime _last;
     bool _left;
     bool _atEdge;
     object? _edge;
@@ -101,15 +102,20 @@ public sealed class DoublePushGate
             if (distance >= AwayDistance) _atEdge = false;
             return RoamPush.None;
         }
-        if (_atEdge) return RoamPush.None; // still pressed against the edge: the same push
+        if (_atEdge)
+        {
+            if (_first is not null && !_left) _last = now; // still pressed against the edge: the same push goes on
+            return RoamPush.None;
+        }
         _atEdge = true;
-        if (_first is { } f && _left && now - f <= Window)
+        if (_first is not null && _left && now - _last <= Window)
         {
             Reset();
             _edge = edge;
             return RoamPush.Cross;
         }
         _first = now;
+        _last = now;
         _left = false;
         return RoamPush.First;
     }

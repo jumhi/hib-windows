@@ -564,7 +564,11 @@ public sealed partial class RoamEngine : IDisposable
                 _remoteCursor = (x, y);
                 UpdateMode();
                 Inject(x, y);
-                if (first) StartControlled();
+                if (first)
+                {
+                    _relIn.Reset();
+                    StartControlled();
+                }
                 WriteLog($"Roam: {p.Name} is using this PC");
                 After(() => _space.SetRoamInUse(true));
                 After(() => Changed?.Invoke());
@@ -579,7 +583,8 @@ public sealed partial class RoamEngine : IDisposable
             case RoamWire.Rel:
                 // §12.4: relative motion for a game here (no MOUSEEVENTF_ABSOLUTE).
                 if (!controlled) break;
-                _injector.Relative(d.Int("dx") ?? 0, d.Int("dy") ?? 0);
+                var (rx, ry) = _relIn.Add(d.Double("dx") ?? 0, d.Double("dy") ?? 0); // §12.6: floats accepted, fractions carried
+                _injector.Relative(rx, ry);
                 break;
             case RoamWire.Button:
             {

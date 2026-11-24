@@ -19,11 +19,14 @@ public static class PeerDiagnostics
     /// <summary>Tests: save fetched logs here instead of the user's logs folder.</summary>
     public static string? DirectoryOverride { get; set; }
 
-    /// <summary>A file name for a computer's log: its name with anything a file name can't hold replaced.</summary>
+    /// <summary>
+    /// A file name for a computer's log (SPACE.md §12.6): its name with <c>/</c>, <c>:</c> and <c>\</c> — and anything else a Windows
+    /// file name can't hold — replaced by <c>-</c>.
+    /// </summary>
     public static string FileNameFor(string computer)
     {
         var bad = Path.GetInvalidFileNameChars().Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' }).ToHashSet();
-        var clean = new string((computer ?? "").Select(c => bad.Contains(c) || char.IsControl(c) ? '_' : c).ToArray()).Trim().Trim('.');
+        var clean = new string((computer ?? "").Select(c => bad.Contains(c) || char.IsControl(c) ? '-' : c).ToArray()).Trim().Trim('.');
         if (clean.Length == 0) clean = "computer";
         if (clean.Length > 80) clean = clean[..80];
         if (string.Equals(clean, "hib", StringComparison.OrdinalIgnoreCase)) clean += " (peer)"; // never this PC's own hib.log

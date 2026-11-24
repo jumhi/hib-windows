@@ -53,12 +53,12 @@ public static class RoamSpeed
 
 /// <summary>
 /// §9.4 / §12.5 what a crossing carries: <c>{"text":…}</c> or <c>{"png":"&lt;base64&gt;"}</c>. Text wins when there is any
-/// (as with the phone's clipboard sync); otherwise an image, PNG ≤ 8 MB.
+/// (as with the phone's clipboard sync); otherwise an image, PNG ≤ 8 000 000 bytes before base64 (SPACE.md §12.6).
 /// </summary>
 public sealed record RoamClip(string? Text, byte[]? Png)
 {
     public const int MaxTextBytes = RoamWire.MaxClipboardBytes;
-    public const int MaxPngBytes = 8 * 1024 * 1024;
+    public const int MaxPngBytes = 8_000_000;
 
     public static RoamClip? Pick(string? text, byte[]? png)
     {
