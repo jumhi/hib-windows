@@ -22,7 +22,7 @@ using HIB.Services;
 
 namespace HIB.Views.Flick;
 
-public sealed class FlickCardManager
+public sealed partial class FlickCardManager
 {
     sealed class Entry
     {
@@ -88,6 +88,8 @@ public sealed class FlickCardManager
             };
         }
         var thumb = ImageUtil.FromBytes(f.Thumbnail);
+        // SPACE.md §14: an item of a bundle joins its stack (the first item of a throw brings the stack in).
+        if (f.Bundle is not null && OnBundleFlick(f, kind, name, thumb)) return;
         if (_cards.TryGetValue(f.Id, out var existing))
         {
             // fileTransferInit beat flickStart: enrich the card already in flight.
@@ -137,6 +139,7 @@ public sealed class FlickCardManager
         if (p.FlickId is null) return;
         _transferToFlick[p.Id] = p.FlickId;
         if (_finished.Contains(p.FlickId)) return;
+        if (OnBundleProgress(p)) return;
         if (!_cards.TryGetValue(p.FlickId, out var e))
         {
             if (p.Done) return;
@@ -162,6 +165,7 @@ public sealed class FlickCardManager
     void OnReceived(ReceivedFile f)
     {
         if (f.FlickId is null || _finished.Contains(f.FlickId)) return;
+        if (OnBundleReceived(f)) return;
         if (!_cards.TryGetValue(f.FlickId, out var e))
         {
             var mime = FileSender.MimeFor(f.Name);
@@ -185,6 +189,7 @@ public sealed class FlickCardManager
     void OnFailed(string transferId, string reason)
     {
         var flickId = _transferToFlick.TryGetValue(transferId, out var fid) ? fid : transferId;
+        if (OnBundleFailed(flickId, reason)) return;
         if (!_cards.TryGetValue(flickId, out var e)) return;
         var c = e.Card;
         c.Transfer = FlickTransfer.Failed;
@@ -204,7 +209,17 @@ public sealed class FlickCardManager
             }
             catch { return null; }
         });
-        if (bmp is null || !_cards.TryGetValue(id, out var e)) return;
+        if (bmp is null) return;
+        if (_bundles.ForFlick(id) is { } bundle)
+        {
+            if (bundle.Items.FirstOrDefault(c => c?.Id == id) is { } item)
+            {
+                item.Thumbnail = bmp;
+                RefreshBundle(bundle.Id);
+            }
+            return;
+        }
+        if (!_cards.TryGetValue(id, out var e)) return;
         e.Card.Thumbnail = bmp;
         e.View.Refresh();
     }
@@ -235,7 +250,7 @@ public sealed class FlickCardManager
         var v = e.Visible;
         var ratio = Math.Clamp(exitXRatio, 0.05, 0.95);
         // Stack: each live card takes the next slot, offset diagonally with alternating tilt.
-        var slot = _order.Count(id => _cards.TryGetValue(id, out var o) && o.Body.Mode is not (FlickBodyMode.Dismissing or FlickBodyMode.Flung)) % 5;
+        var slot = LiveSlots() % 5;
         var tx = v.X + v.Width / 2 + (ratio - 0.5) * v.Width * 0.3 + slot * 26;
         var ty = v.Bottom - v.Height * 0.30 - slot * 16;
         tx = Math.Clamp(tx, v.X + FlickCardView.CardWidth / 2 + 24, Math.Max(v.X + FlickCardView.CardWidth / 2 + 24, v.Right - FlickCardView.CardWidth / 2 - 24));
@@ -316,6 +331,7 @@ public sealed class FlickCardManager
             e.View.Animate(dt);
         }
         foreach (var id in removed) Remove(id);
+        FrameBundles(dt);
 
         _housekeep += dt;
         if (_housekeep >= 0.25)
@@ -323,7 +339,7 @@ public sealed class FlickCardManager
             Housekeep(_housekeep);
             _housekeep = 0;
         }
-        if (_cards.Count == 0) _timer.Stop();
+        if (_cards.Count == 0 && _stacks.Count == 0) _timer.Stop();
     }
 
     void Landed(Entry e)
@@ -351,6 +367,7 @@ public sealed class FlickCardManager
 
     void Housekeep(double elapsed)
     {
+        HousekeepBundles(elapsed);
         var now = DateTime.UtcNow;
         foreach (var (id, e) in _cards.ToList())
         {
@@ -402,11 +419,11 @@ public sealed class FlickCardManager
     }
 
     /// <summary>Shrink toward where the file lives: Desktop icons sit top-left on Windows; anything else heads for the taskbar.</summary>
-    static Point DismissTarget(Entry e)
+    static Point DismissTarget(Entry e) => DismissPoint(e.Visible, e.Body.X, e.Body.Y, e.Card.FilePath);
+
+    static Point DismissPoint(Rect v, double x, double y, string? path)
     {
-        var v = e.Visible;
-        var path = e.Card.FilePath;
-        if (path is null) return new Point(e.Body.X, e.Body.Y + 40);
+        if (path is null) return new Point(x, y + 40);
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         if (!string.IsNullOrEmpty(desktop) && string.Equals(Path.GetDirectoryName(path)?.TrimEnd('\\', '/'), desktop.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
             return new Point(v.X + 60, v.Y + 70);

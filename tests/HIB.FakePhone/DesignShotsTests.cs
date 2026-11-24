@@ -408,4 +408,142 @@ public class DesignShotsTests
         SaveShot(Capture(noticeHost), "windows-roam-notice");
         noticeHost.Close();
     }
+
+    // ---------------- Flick bundles (SPACE.md §14) ----------------
+
+    /// <summary>Nine little "photos" (sunsets, sea, hills, a night city…) for the bundle shots.</summary>
+    static Bitmap[] Photos()
+    {
+        (string sky0, string sky1, string sun, string land)[] looks =
+        [
+            ("#FF8A3D", "#3B1C5A", "#FFE08A", "#24123A"),
+            ("#4FC3F7", "#0B3C6B", "#FFFFFF", "#0E5C7A"),
+            ("#B7E07A", "#2E7D5B", "#FFF6C2", "#1F4D3A"),
+            ("#0B1640", "#1B2B6B", "#E8F0FF", "#060A1E"),
+            ("#FFB199", "#C2407A", "#FFF0D6", "#5A1F3D"),
+            ("#9BE7FF", "#2A6F97", "#FFFFFF", "#E9D7B0"),
+            ("#F6D365", "#FDA085", "#FFFFFF", "#7A3E2B"),
+            ("#2BC0E4", "#EAECC6", "#FFFFFF", "#3E7C59"),
+            ("#141E30", "#243B55", "#FFD86F", "#0A0F1C"),
+        ];
+        return looks.Select((l, i) => new Bitmap(new MemoryStream(Png(480, 340, ctx =>
+        {
+            ctx.FillRectangle(new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse(l.sky0), 0), new GradientStop(Color.Parse(l.sky1), 1) },
+            }, new Rect(0, 0, 480, 340));
+            ctx.DrawEllipse(new SolidColorBrush(Color.Parse(l.sun), 0.9), null, new Point(120 + i * 31 % 240, 110 + i * 17 % 60), 46, 46);
+            ctx.DrawEllipse(new SolidColorBrush(Color.Parse(l.land), 0.85), null, new Point(130, 360), 260, 110);
+            ctx.DrawEllipse(new SolidColorBrush(Color.Parse(l.land)), null, new Point(380, 380), 240, 120);
+            if (i == 3 || i == 8)
+                for (var k = 0; k < 9; k++) // a night skyline
+                    ctx.FillRectangle(new SolidColorBrush(Color.Parse("#0A0F24")), new Rect(20 + k * 50, 200 - k * 37 % 90, 40, 160));
+        })))).ToArray();
+    }
+
+    static HIB.Views.Flick.FlickBundle PhotoBundle(int count, Bitmap[] photos, int arrived)
+    {
+        var b = new HIB.Views.Flick.FlickBundle(Guid.NewGuid().ToString(), count) { From = "Haitham's S26 Ultra", Landed = true };
+        for (var i = 0; i < count; i++)
+        {
+            var t = i < arrived ? HIB.Views.Flick.FlickTransfer.Done : i == arrived ? HIB.Views.Flick.FlickTransfer.Receiving : HIB.Views.Flick.FlickTransfer.Waiting;
+            b.Put(i, new HIB.Views.Flick.FlickCard($"f{i}", "image", $"IMG_20261124_{1402 + i * 3}.jpg", "image/jpeg", 2_400_000 + i * 310_000, t)
+            {
+                Thumbnail = photos[i % photos.Length],
+                Progress = i == arrived ? 0.55 : 0,
+                Landed = true,
+                From = "Haitham's S26 Ultra",
+            });
+        }
+        return b;
+    }
+
+    /// <summary>A 1440×900 desktop with <paramref name="content"/> laid on it at <paramref name="at"/> (DIPs).</summary>
+    static async Task<Window> ContentOnDesktop(Control content, Rect at)
+    {
+        content.Width = at.Width;
+        content.Height = at.Height;
+        content.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        content.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+        content.Margin = new Thickness(at.X, at.Y, 0, 0);
+        var desktop = new Bitmap(new MemoryStream(Png(2880, 1800, Desktop)));
+        var host = new Window
+        {
+            Width = 1440,
+            Height = 900,
+            Content = new Panel { Children = { new Image { Source = desktop, Stretch = Stretch.Fill }, content } },
+        };
+        host.SetRenderScaling(2);
+        host.Show();
+        await Pump(250);
+        return host;
+    }
+
+    /// <summary>A settled fan of <paramref name="bundle"/> around (cx, cy), composed the way FlickCardManager does.</summary>
+    static (HIB.Views.Flick.FlickFanView View, Rect Area) SettledFan(HIB.Views.Flick.FlickBundle bundle, double cx, double cy)
+    {
+        var visible = new Rect(0, 0, 1440, 852); // above the taskbar
+        var area = new Rect(24, 24, visible.Width - 48, visible.Height - 48 - HIB.Views.Flick.FlickFanView.PillSpace);
+        var present = bundle.Present;
+        var p = HIB.Views.Flick.FlickFan.Place(present.Count, cx, cy, area, HIB.Views.Flick.FlickCardView.CardWidth, HIB.Views.Flick.FlickCardView.CardHeight);
+        var rect = p.Bounds.Inflate(new Thickness(72, 72, 72, 72 + HIB.Views.Flick.FlickFanView.PillSpace)).Intersect(new Rect(0, 0, 1440, 900));
+        var pill = new Point(p.Bounds.Center.X - rect.X, Math.Min(rect.Height - HIB.Views.Flick.FlickFanView.PillSpace / 2, p.Bounds.Bottom - rect.Y + HIB.Views.Flick.FlickFanView.PillSpace / 2 + 4));
+        var view = new HIB.Views.Flick.FlickFanView(rect.Size, pill);
+        for (var place = p.Slots.Count - 1; place >= 0; place--)
+        {
+            var slot = p.Slots[place];
+            var card = slot.IsMore
+                ? new HIB.Views.Flick.FlickCard("more", "more", $"{slot.More} more", "", 0, HIB.Views.Flick.FlickTransfer.None) { More = slot.More, SubtitleOverride = "Open the folder", BadgeKind = "more", Landed = true }
+                : present[slot.Item];
+            var cv = new HIB.Views.Flick.FlickCardView(card);
+            view.AddCard(cv);
+            HIB.Views.Flick.FlickFanView.Place(cv, new HIB.Views.Flick.FlickBody
+            {
+                X = p.Centers[place].X - rect.X,
+                Y = p.Centers[place].Y - rect.Y,
+                Rot = HIB.Views.Flick.FlickFan.Tilt(place),
+                Scale = p.Scale,
+                Alpha = 1,
+            });
+        }
+        view.ShowHalo(true);
+        view.ShowPill(true);
+        view.Settle();
+        return (view, rect);
+    }
+
+    [AvaloniaFact]
+    public async Task Flick_bundle_stack_and_fans()
+    {
+        var photos = Photos();
+        var w = HIB.Views.Flick.FlickStackView.ContainerWidth;
+        var h = HIB.Views.Flick.FlickStackView.ContainerHeight;
+
+        // Five photos thrown at once: one stack, all arrived (lime badge), then still arriving (cyan badge, one ring).
+        foreach (var (name, arrived) in new[] { ("windows-bundle-stack5", 5), ("windows-bundle-stack5-receiving", 2) })
+        {
+            var stack = new HIB.Views.Flick.FlickStackView(PhotoBundle(5, photos, arrived)) { RenderTransform = new RotateTransform(-1.6) };
+            stack.Refresh();
+            stack.Animate(0);
+            var host = await ContentOnDesktop(stack, new Rect(980 - w / 2, 560 - h / 2, w, h));
+            await Pump(300);
+            Assert.Equal(3, stack.PeekCount);
+            Assert.Equal("5", stack.BadgeText);
+            SaveShot(Capture(host), name);
+            host.Close();
+        }
+
+        // Spread out: dice-five, 3×2, 3×3, and a grid with "+N".
+        foreach (var (n, name) in new[] { (5, "windows-bundle-fan5"), (6, "windows-bundle-fan6"), (9, "windows-bundle-fan9"), (12, "windows-bundle-fan12") })
+        {
+            var (view, rect) = SettledFan(PhotoBundle(n, photos, n), 900, 470);
+            var host = await ContentOnDesktop(view, rect);
+            await Pump(300);
+            Assert.Equal(Math.Min(n, 9), view.CardViews.Count);
+            SaveShot(Capture(host), name);
+            host.Close();
+        }
+    }
 }

@@ -188,6 +188,7 @@ public sealed class PhoneHub
             Elevation = d.Double("elevation"),
             From = d.Str("from"),
             Screen = d.Str("screen"),
+            Bundle = FlickBundleTag.Parse(d),
         };
         FlickStarted?.Invoke(info);
         // link/text have no file transfer: the card has "landed" as soon as we handled it.

@@ -457,10 +457,11 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
                     d.Long("size") ?? 0, LenientJson.Base64(d.Str("thumbnail")), d.Str("text"))
                 {
                     Angle = d.Double("angle") ?? 0,
-            ExitXRatio = d.Double("exitXRatio") ?? 0.5,
-            Velocity = d.Double("velocity") ?? 1800,
+                    ExitXRatio = d.Double("exitXRatio") ?? 0.5,
+                    Velocity = d.Double("velocity") ?? 1800,
                     From = d.Str("from") is { Length: > 0 } from ? from : link.PeerName,
                     At = HIB.Core.Roam.RoamWire.At(d),
+                    Bundle = FlickBundleTag.Parse(d),
                 };
                 RaiseFlickArrived(info);
                 if (info.IsTransferless) _ = link.SendAsync("flickLanded", new { id });
@@ -540,7 +541,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
     }
 
     Dictionary<string, object?> FlickStartData(string id, string kind, string name, string mime, long size, byte[]? thumbnail, bool toPeer,
-        (double X, double Y)? at = null)
+        (double X, double Y)? at = null, FlickBundleTag? bundle = null)
     {
         var d = new Dictionary<string, object?>
         {
@@ -560,6 +561,7 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
             d["angle"] = 0.0;
         }
         if (at is { } p) d["at"] = new Dictionary<string, object?> { ["x"] = Math.Round(p.X, 2), ["y"] = Math.Round(p.Y, 2) };
+        if (bundle is not null) d["bundle"] = bundle.ToWire();
         return d;
     }
 
@@ -568,30 +570,69 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
 
     public override async Task<IReadOnlyList<SendResult>> SendFilesAsync(string deviceId, IReadOnlyList<string> paths, CancellationToken ct = default)
     {
-        var results = new List<SendResult>();
+        var results = new SendResult?[paths.Count];
         var target = Find(deviceId);
-        foreach (var path in paths)
+        var go = new List<int>();
+        for (var i = 0; i < paths.Count; i++)
         {
+            var path = paths[i];
             var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (IsSelf(deviceId))
-            {
-                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, "That's this computer"));
-                continue;
-            }
-            if (Directory.Exists(path))
-            {
-                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, "Folders can't be sent"));
-                continue;
-            }
-            if (target is null || !target.CanReceive)
-            {
-                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, $"{target?.Name ?? deviceId} isn't reachable"));
-                continue;
-            }
-            results.Add(await SendOneAsync(target, path, ct).ConfigureAwait(false));
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, "That's this computer");
+            else if (Directory.Exists(path))
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, "Folders can't be sent");
+            else if (target is null || !target.CanReceive)
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, $"{target?.Name ?? deviceId} isn't reachable");
+            else if (!File.Exists(path))
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, "File not found");
+            else go.Add(i);
         }
-        if (target is not null && results.Any(r => r.Ok)) _peers.LastTarget = target.Id;
-        return results;
+        if (target is not null && go.Count > 0)
+        {
+            // SPACE.md §14: several files at once go as ONE bundle — a stack on a computer, one notification on the phone.
+            var ids = go.Count >= 2 ? await AnnounceBundleAsync(target, go.Select(i => paths[i]).ToList(), null, ct).ConfigureAwait(false) : null;
+            for (var k = 0; k < go.Count; k++)
+                results[go[k]] = await SendOneAsync(target, paths[go[k]], ct, null, ids?[k]).ConfigureAwait(false);
+        }
+        if (target is not null && results.Any(r => r?.Ok == true)) _peers.LastTarget = target.Id;
+        return results.Select(r => r!).ToList();
+    }
+
+    /// <summary>
+    /// Throws every file of a bundle at once (SPACE.md §14): one <c>flickStart</c> per file, all with the same
+    /// <c>bundle {id, index, count}</c> (and the same <c>at</c>), before any file goes. Returns each file's flick id, or
+    /// null when the target has no route that takes flickStart (through the phone to another computer).
+    /// </summary>
+    async Task<string[]?> AnnounceBundleAsync(SpaceDevice target, IReadOnlyList<string> files, (double X, double Y)? at, CancellationToken ct)
+    {
+        PeerLink? link = null;
+        if (target.IsPhone)
+        {
+            if (!Link.IsConnected) return null;
+        }
+        else if ((link = _net.Get(target.Id)) is null || SenderFor(link) is null)
+        {
+            return null;
+        }
+        var bundleId = Guid.NewGuid().ToString();
+        var ids = new string[files.Count];
+        for (var i = 0; i < files.Count; i++)
+        {
+            var path = files[i];
+            var id = ids[i] = Guid.NewGuid().ToString();
+            var name = Path.GetFileName(path);
+            var size = new FileInfo(path).Length;
+            var mime = FileSender.MimeFor(name);
+            var kind = SpaceIds.KindForMime(mime);
+            var thumb = await ThumbnailAsync(path, kind).ConfigureAwait(false);
+            var data = FlickStartData(id, kind, name, mime, size, thumb, toPeer: link is not null, at, new FlickBundleTag(bundleId, i, files.Count));
+            var sent = link is null
+                ? await Link.SendAsync("flickStart", data, ct).ConfigureAwait(false)
+                : await link.SendAsync("flickStart", data, ct).ConfigureAwait(false);
+            if (!sent && link is not null) return null; // the direct link went away: each file finds its own route
+        }
+        WriteLog($"Bundle of {files.Count} to {target.Name}");
+        return ids;
     }
 
     /// <summary>
@@ -600,30 +641,36 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
     /// </summary>
     public async Task<IReadOnlyList<SendResult>> SendFilesDroppedAsync(string deviceId, IReadOnlyList<string> paths, double x, double y, CancellationToken ct = default)
     {
-        var results = new List<SendResult>();
-        foreach (var path in paths)
+        var results = new SendResult?[paths.Count];
+        var target = Find(deviceId);
+        var go = new List<int>();
+        for (var i = 0; i < paths.Count; i++)
         {
+            var path = paths[i];
             var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (Directory.Exists(path))
-            {
-                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, "Folders can't be sent"));
-                continue;
-            }
-            var target = Find(deviceId);
-            if (target is null || IsSelf(deviceId) || _net.Get(deviceId) is null)
-            {
-                results.Add(new SendResult(Guid.NewGuid().ToString(), name, false, $"{target?.Name ?? deviceId} isn't reachable"));
-                continue;
-            }
-            results.Add(await SendOneAsync(target, path, ct, (x, y)).ConfigureAwait(false));
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, "Folders can't be sent");
+            else if (target is null || IsSelf(deviceId) || _net.Get(deviceId) is null)
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, $"{target?.Name ?? deviceId} isn't reachable");
+            else if (!File.Exists(path))
+                results[i] = new SendResult(Guid.NewGuid().ToString(), name, false, "File not found");
+            else go.Add(i);
         }
-        if (results.Any(r => r.Ok)) _peers.LastTarget = deviceId;
-        return results;
+        if (target is not null && go.Count > 0)
+        {
+            // Several files dropped at once land as one stack at the drop point (SPACE.md §14).
+            var ids = go.Count >= 2 ? await AnnounceBundleAsync(target, go.Select(i => paths[i]).ToList(), (x, y), ct).ConfigureAwait(false) : null;
+            for (var k = 0; k < go.Count; k++)
+                results[go[k]] = await SendOneAsync(target, paths[go[k]], ct, (x, y), ids?[k]).ConfigureAwait(false);
+        }
+        if (results.Any(r => r?.Ok == true)) _peers.LastTarget = deviceId;
+        return results.Select(r => r!).ToList();
     }
 
-    async Task<SendResult> SendOneAsync(SpaceDevice target, string path, CancellationToken ct, (double X, double Y)? at = null)
+    /// <param name="announcedId">The flick id this file was announced with as part of a bundle (its flickStart already went).</param>
+    async Task<SendResult> SendOneAsync(SpaceDevice target, string path, CancellationToken ct, (double X, double Y)? at = null, string? announcedId = null)
     {
-        var id = Guid.NewGuid().ToString();
+        var id = announcedId ?? Guid.NewGuid().ToString();
         var name = Path.GetFileName(path);
         if (!File.Exists(path)) return new SendResult(id, name, false, "File not found");
         var size = new FileInfo(path).Length;
@@ -633,16 +680,21 @@ public sealed class SpaceEngine : SpaceDirectory, IDisposable
         if (target.IsPhone)
         {
             // §3.4: flickStart with a preview first; an old phone ignores it and still gets the file.
-            var thumb = await ThumbnailAsync(path, kind).ConfigureAwait(false);
             _transferDevice[id] = SpaceIds.Phone;
-            await Link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size, thumb, toPeer: false), ct).ConfigureAwait(false);
+            if (announcedId is null)
+            {
+                var thumb = await ThumbnailAsync(path, kind).ConfigureAwait(false);
+                await Link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size, thumb, toPeer: false), ct).ConfigureAwait(false);
+            }
             return await Sender.SendAsync(path, null, target.Name, id, new Dictionary<string, object?> { ["flickId"] = id }, ct).ConfigureAwait(false);
         }
 
         if (_net.Get(target.Id) is { } link && SenderFor(link) is { } direct)
         {
-            var thumb = await ThumbnailAsync(path, kind).ConfigureAwait(false);
-            if (await link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size, thumb, toPeer: true, at), ct).ConfigureAwait(false))
+            var announced = announcedId is not null
+                || await link.SendAsync("flickStart", FlickStartData(id, kind, name, mime, size,
+                    await ThumbnailAsync(path, kind).ConfigureAwait(false), toPeer: true, at), ct).ConfigureAwait(false);
+            if (announced)
             {
                 var r = await direct.SendAsync(path, null, target.Name, id, new Dictionary<string, object?>
                 {

@@ -45,6 +45,14 @@ public sealed class FlickCard
     public bool Landed { get; set; }
     public bool Hovered { get; set; }
     public string? Note { get; set; }
+    /// <summary>Replaces the computed subtitle (a bundle's stack: "Receiving 2 of 5 · 40%").</summary>
+    public string? SubtitleOverride { get; set; }
+    /// <summary>The small glyph top-left, when it isn't the kind's own ("stack" for a bundle).</summary>
+    public string? BadgeKind { get; set; }
+    /// <summary>For the "+N" card of a fanned bundle: how many more the folder holds.</summary>
+    public int More { get; set; }
+    /// <summary>Dragged out of a fanned bundle: it left the bundle.</summary>
+    public bool Taken { get; set; }
     /// <summary>Seconds left before auto-dismiss (counts down once landed, idle and not hovered).</summary>
     public double Remaining { get; set; } = 12;
     public DateTime LastActivity { get; set; } = DateTime.UtcNow;
@@ -70,6 +78,7 @@ public sealed class FlickCard
         get
         {
             if (Note is not null) return Note;
+            if (SubtitleOverride is not null) return SubtitleOverride;
             if (From is { Length: > 0 } from && Transfer != FlickTransfer.Failed) return $"From {from} · {BaseSubtitle}";
             return BaseSubtitle;
         }
@@ -343,7 +352,7 @@ public sealed class FlickCardView : Panel
         _subtitle.Foreground = c.Transfer == FlickTransfer.Failed && c.Note is null
             ? FlickTheme.Solid(FlickTheme.Danger, 0.9)
             : FlickTheme.Solid(Colors.White, 0.6);
-        _badgeGlyph.Data = FlickTheme.KindGlyph(c.Kind);
+        _badgeGlyph.Data = FlickTheme.KindGlyph(c.BadgeKind ?? c.Kind);
         _thumb.Source = c.Thumbnail;
         _thumb.IsVisible = c.Thumbnail is not null;
         _play.IsVisible = c.Thumbnail is not null && c.Kind == "video";
@@ -368,7 +377,7 @@ public sealed class FlickCardView : Panel
 
     void BuildPlaceholder(FlickCard c)
     {
-        var key = $"{c.Kind}|{c.Text}|{c.Name}";
+        var key = $"{c.Kind}|{c.Text}|{c.Name}|{c.More}";
         if (key == _placeholderKey) return;
         _placeholderKey = key;
         _placeholder.Children.Clear();
@@ -381,6 +390,28 @@ public sealed class FlickCardView : Panel
         Control content;
         switch (c.Kind)
         {
+            case "more":
+                // A fanned bundle's "+N" card: the rest wait in the folder.
+                content = new StackPanel
+                {
+                    Spacing = 2,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "+" + c.More.ToString(CultureInfo.InvariantCulture),
+                            FontSize = 46,
+                            FontWeight = FontWeight.Bold,
+                            Foreground = FlickTheme.Solid(FlickTheme.Cyan),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Effect = new DropShadowEffect { Color = FlickTheme.A(FlickTheme.Cyan, 0.55), BlurRadius = 18, OffsetX = 0, OffsetY = 0 },
+                        },
+                        new TextBlock { Text = "more in the folder", FontSize = 11, FontWeight = FontWeight.Medium, Foreground = FlickTheme.Solid(Colors.White, 0.7), HorizontalAlignment = HorizontalAlignment.Center },
+                    },
+                };
+                break;
             case "link":
                 content = new StackPanel
                 {

@@ -57,8 +57,16 @@ public static class FlickTheme
     public static readonly Geometry Laptop = Geometry.Parse("M4,6H20V16H4M20,18A2,2 0 0,0 22,16V6C22,4.89 21.1,4 20,4H4C2.89,4 2,4.89 2,6V16A2,2 0 0,0 4,18H0V20H24V18H20Z");
     public static readonly Geometry Monitor = Geometry.Parse("M21,16H3V4H21M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z");
 
+    public static readonly Geometry Folder = Geometry.Parse("M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z");
+    /// <summary>Three cards stacked (a bundle).</summary>
+    public static readonly Geometry Stack = Geometry.Parse("M4,7H2V20A2,2 0 0,0 4,22H17V20H4V7M20,2H8A2,2 0 0,0 6,4V16A2,2 0 0,0 8,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M20,16H8V4H20V16Z");
+    /// <summary>Arrows pointing in (Gather).</summary>
+    public static readonly Geometry Gather = Geometry.Parse("M19.5,3.09L15,7.59V4H13V11H20V9H16.41L20.91,4.5L19.5,3.09M4,13V15H7.59L3.09,19.5L4.5,20.91L9,16.41V20H11V13H4Z");
+
     public static Geometry KindGlyph(string kind) => kind switch
     {
+        "stack" => Stack,
+        "more" => Folder,
         "image" => Image,
         "video" => Video,
         "link" => Link,
