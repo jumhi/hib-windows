@@ -267,4 +267,19 @@ public static class RoamWheel
         static int Clamp(double v) => double.IsFinite(v) ? (int)Math.Clamp(Math.Round(v), -Notch * 100, Notch * 100) : 0;
         return (Clamp(dy), Clamp(dx));
     }
+
+    /// <summary>
+    /// ctlWheel → wheel deltas with their fractions kept (SPACE.md §12.3): the input thread carries what is left under one
+    /// 120th over to the next event, so a trackpad's small steps add up instead of vanishing.
+    /// </summary>
+    public static (double Vertical, double Horizontal) ToWindows(double dx, double dy, bool exact)
+    {
+        if (!exact)
+        {
+            var (v, h) = ToWindows(dx, dy);
+            return (v, h);
+        }
+        static double Clamp(double v) => double.IsFinite(v) ? Math.Clamp(v, -Notch * 100, Notch * 100) : 0;
+        return (Clamp(dy), Clamp(dx));
+    }
 }

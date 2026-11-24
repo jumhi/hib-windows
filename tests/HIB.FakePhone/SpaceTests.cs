@@ -85,6 +85,16 @@ public class SpaceTests
         return path;
     }
 
+    /// <summary>A small real PNG in memory (clipboard images, SPACE.md §12.5).</summary>
+    internal static byte[] PngBytes(int w, int h)
+    {
+        using var bmp = new SKBitmap(w, h);
+        using (var c = new SKCanvas(bmp)) c.Clear(new SKColor((byte)(w * 3), (byte)(h * 5), 0x90));
+        using var img = SKImage.FromBitmap(bmp);
+        using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
     // ---------------- directory parsing + target rule ----------------
 
     [Fact]

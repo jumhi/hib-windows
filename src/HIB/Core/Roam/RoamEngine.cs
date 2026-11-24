@@ -2,6 +2,8 @@
 // each linked computer's Roam state (its ctlHello, the side, this PC's choices), runs the controller
 // (RoamController) against the platform's captured input, injects what another computer sends while
 // it drives this one, carries the clipboard across, and hands dropped files to the Space engine.
+// Round 2 (SPACE.md §12, RoamEngine.Round2.cs): injection on a dedicated input thread, Mouse Keys for a PC without a
+// mouse, the UIPI guard and key-path counters, game mode, hotkeys, lock together, keep awake, speeds, clipboard images.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,6 +29,12 @@ public sealed class RoamOptions
     public TimeSpan ClipboardTimeout { get; set; } = TimeSpan.FromMilliseconds(250);
     /// <summary>The room (SPACE.md §10): roomLayout and portals. Off = §9.2 only, like an older H.I.B (tests of the §9.2 path).</summary>
     public bool Room { get; set; } = true;
+    /// <summary>SPACE.md §12: Mouse Keys, the window in front, keep awake, lock (Windows by default; nothing elsewhere).</summary>
+    public Func<IRoamSystem> System { get; set; } = RoamSystems.CreateDefault;
+    /// <summary>How often the app in front is looked at (§12.4) and the other housekeeping runs.</summary>
+    public TimeSpan Housekeeping { get; set; } = TimeSpan.FromMilliseconds(250);
+    /// <summary>How often a ready computer is pinged for the latency readout (§12.3) while not away.</summary>
+    public TimeSpan LatencyPing { get; set; } = TimeSpan.FromSeconds(2);
 }
 
 public static class RoamPlatforms
@@ -53,6 +61,15 @@ public sealed record RoamPeerStatus(string PeerId, string Name, string Platform,
     bool HasRemote, RoamSide Side, RoamSideSource SideSource, bool NeedsAsk, bool CmdAsCtrl, bool Ready, RoamRole Role, string Status)
 {
     public bool IsMac => Platform != "windows";
+    /// <summary>§12.3: the link's ping round trip (median of the last 20), null before the first.</summary>
+    public int? LatencyMs { get; init; }
+    /// <summary>§12.5 this computer's speeds for that one.</summary>
+    public double PointerSpeed { get; init; } = 1;
+    public double ScrollSpeed { get; init; } = 1;
+    public bool NaturalScroll { get; init; }
+    /// <summary>§12.4: what that computer's app in front is doing.</summary>
+    public RoamGameMode RemoteGame { get; init; }
+    public string RemoteApp { get; init; } = "";
 }
 
 /// <summary>A file drag from the other computer, shown as a ghost card under the cursor here (points).</summary>
@@ -81,6 +98,11 @@ public sealed partial class RoamEngine : IDisposable
         public bool SentRoom;
         /// <summary>The layout it has from us (or sent us): only a different one goes out.</summary>
         public string? LastSentRoom;
+        /// <summary>§12.4: its app in front (ctlTargetState).</summary>
+        public RoamGameMode Game;
+        public string GameApp = "";
+        public DateTime LastLatencyPing;
+        public int? ShownLatency;
     }
 
     readonly SpaceEngine _space;
@@ -116,7 +138,12 @@ public sealed partial class RoamEngine : IDisposable
         _platform = _options.Platform();
         _controller = new RoamController(new Host(this), _clock) { LocalPlatform = _platform.Platform };
         _timer = new Timer(_ => OnTick(), null, Timeout.Infinite, Timeout.Infinite);
+        _platform.Log = WriteLog;
         _platform.Input += OnInput;
+        _system = _options.System();
+        _injector = new RoamInjector(_platform, _stats, () => _system.Foreground());
+        _mouseKeys = new MouseKeysKeeper(_system, dataDir, WriteLog);
+        StartRound2();
         space.Network.LinkUp += OnLinkUp;
         space.Network.LinkDown += OnLinkDown;
         space.FlickArrived += f =>
@@ -283,8 +310,18 @@ public sealed partial class RoamEngine : IDisposable
         else if (_displays.Count == 0 || p.Remote.Screens.Count == 0) text = "Getting the screens ready…";
         else if (room && !_roomMap.Touches(Own, p.Id)) text = $"{p.Name} isn't next to this PC on your desk · Arrange to connect them";
         else text = $"Move the cursor off the {RoamSides.EdgeWord(side)} edge to go to {p.Name}";
+        if (role == RoamRole.Controlling && _controller.RelativeMode) text = $"Game mode on {p.Name} · the mouse stays there · {RoamPill.LeaveKeys} to leave";
+        else if (role == RoamRole.Controlling && _controller.UserLock) text = $"Locked to {p.Name} · {RoamPill.LeaveKeys} to unlock";
         return new RoamPeerStatus(p.Id, p.Name, p.Platform, linked, s.Enabled, p.Remote?.Enabled ?? false, p.Remote is not null,
-            side, source, needsAsk, s.CmdAsCtrl, ready, role, text);
+            side, source, needsAsk, s.CmdAsCtrl, ready, role, text)
+        {
+            LatencyMs = linked ? p.Link!.Latency.MedianMs : null,
+            PointerSpeed = RoamSpeed.Clamp(s.PointerSpeed),
+            ScrollSpeed = RoamSpeed.Clamp(s.ScrollSpeed),
+            NaturalScroll = s.NaturalScroll,
+            RemoteGame = p.Game,
+            RemoteApp = p.GameApp,
+        };
     }
 
     (RoamSide Side, RoamSideSource Source) SideOf(Peer p, RoamPairSettings s)
@@ -313,13 +350,15 @@ public sealed partial class RoamEngine : IDisposable
             if (UsesRoom(p))
             {
                 // §10.3: reached through the room's portals; the side is only where its group sits.
-                neighbors.Add(new RoamNeighbor(p.Id, p.Name, RoomSide(p.Id), screens, p.Platform, s.CmdAsCtrl, InRoom: true));
+                neighbors.Add(new RoamNeighbor(p.Id, p.Name, RoomSide(p.Id), screens, p.Platform, s.CmdAsCtrl, InRoom: true,
+                    Game: GameOf(p), PointerSpeed: RoamSpeed.Clamp(s.PointerSpeed), ScrollSpeed: RoamSpeed.Clamp(s.ScrollSpeed), NaturalScroll: s.NaturalScroll));
                 inRoom.Add(p.Id);
                 continue;
             }
             var (side, _) = SideOf(p, s);
             if (neighbors.Any(n => !n.InRoom && n.Side == side)) continue;
-            neighbors.Add(new RoamNeighbor(p.Id, p.Name, side, screens, p.Platform, s.CmdAsCtrl));
+            neighbors.Add(new RoamNeighbor(p.Id, p.Name, side, screens, p.Platform, s.CmdAsCtrl,
+                Game: GameOf(p), PointerSpeed: RoamSpeed.Clamp(s.PointerSpeed), ScrollSpeed: RoamSpeed.Clamp(s.ScrollSpeed), NaturalScroll: s.NaturalScroll));
         }
         // The controller's room: this PC and the ready computers placed with it.
         _controller.SetRoom(inRoom.Count == 0 ? RoomMap.Empty
@@ -376,6 +415,8 @@ public sealed partial class RoamEngine : IDisposable
             p.LastRemoteCmd = null;
             p.SentRoom = false;
             p.LastSentRoom = null; // §10.2: the room goes out on every peer hello
+            p.Game = RoamGameMode.Normal;
+            p.GameApp = "";
             p.Outbox.Clear();
             p.Pump = new CancellationTokenSource();
             var ct = p.Pump.Token;
@@ -383,6 +424,7 @@ public sealed partial class RoamEngine : IDisposable
             link.MessageReceived += OnPeerMessage;
             link.PongReceived += OnPong;
             SendHello(p);
+            SendTargetState(p); // §12.4: what this PC's app in front is doing
             Recompute(); // sends the room (§10.2) right after the hello
         });
     }
@@ -449,24 +491,22 @@ public sealed partial class RoamEngine : IDisposable
         Enqueue(p, RoamWire.Hello, hello.ToWire());
     }
 
-    /// <summary>Sends one peer's queue in order; moves are paced by the outbox.</summary>
+    /// <summary>
+    /// Sends one peer's queue in order (§12.3): the next item goes the moment the previous frame is written; moves offered
+    /// meanwhile collapse into the newest position waiting at the end of the queue.
+    /// </summary>
     async Task PumpAsync(Peer p, PeerLink link, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             RoamOutboxItem? item;
-            TimeSpan wait;
             lock (_gate)
             {
-                if (!p.Outbox.TryTake(_clock(), out item, out wait)) item = null;
+                if (!p.Outbox.TryTake(out item)) item = null;
             }
             if (item is null)
             {
-                try
-                {
-                    if (wait == Timeout.InfiniteTimeSpan) await p.Signal.WaitAsync(ct).ConfigureAwait(false);
-                    else await p.Signal.WaitAsync(wait < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : wait, ct).ConfigureAwait(false);
-                }
+                try { await p.Signal.WaitAsync(ct).ConfigureAwait(false); }
                 catch (OperationCanceledException) { return; }
                 continue;
             }
@@ -515,13 +555,15 @@ public sealed partial class RoamEngine : IDisposable
                     Enqueue(p, RoamWire.Release, RoamWire.ReleaseData()); // not now: the cursor goes back
                     break;
                 }
+                var first = _controlledBy is null;
                 _controlledBy = p.Id;
-                ApplyClipboard(RoamWire.ClipboardText(d));
+                ApplyClipboard(RoamClip.Parse(d));
                 var x = d.Double("x") ?? 0;
                 var y = d.Double("y") ?? 0;
                 _remoteCursor = (x, y);
                 UpdateMode();
                 Inject(x, y);
+                if (first) StartControlled();
                 WriteLog($"Roam: {p.Name} is using this PC");
                 After(() => _space.SetRoamInUse(true));
                 After(() => Changed?.Invoke());
@@ -533,6 +575,11 @@ public sealed partial class RoamEngine : IDisposable
                 Inject(_remoteCursor.X, _remoteCursor.Y);
                 if (_ghost is { } g) SetGhost(g with { X = _remoteCursor.X, Y = _remoteCursor.Y });
                 break;
+            case RoamWire.Rel:
+                // §12.4: relative motion for a game here (no MOUSEEVENTF_ABSOLUTE).
+                if (!controlled) break;
+                _injector.Relative(d.Int("dx") ?? 0, d.Int("dy") ?? 0);
+                break;
             case RoamWire.Button:
             {
                 if (!controlled || RoamButtons.Parse(d.Str("b")) is not { } b) break;
@@ -541,26 +588,36 @@ public sealed partial class RoamEngine : IDisposable
                 if (_ghost is not null && b == RoamButton.Left) break;
                 if (down) _injectedButtons.Add(b);
                 else _injectedButtons.Remove(b);
-                _platform.InjectButton(b, down);
+                _injector.Button(b, down);
                 break;
             }
             case RoamWire.Wheel:
+            {
                 if (!controlled) break;
-                var (v, h) = RoamWheel.ToWindows(d.Double("dx") ?? 0, d.Double("dy") ?? 0);
-                if (v != 0 || h != 0) _platform.InjectWheel(h, v);
+                // §12.3: fractions are carried over on the input thread (sub-notch, smooth scrolling).
+                var (v, h) = RoamWheel.ToWindows(d.Double("dx") ?? 0, d.Double("dy") ?? 0, exact: true);
+                _injector.Wheel(h, v);
                 break;
+            }
             case RoamWire.Key:
             {
                 if (!controlled || d.Int("usage") is not { } usage) break;
+                _stats.Received();
                 var down = d.Bool("down") ?? false;
                 if (down) _injectedKeys.Add(usage);
                 else _injectedKeys.Remove(usage);
-                _platform.InjectKey(usage, down);
+                _injector.Key(usage, down); // §12.5 key repeat: every repeated down is typed (Windows doesn't repeat injected keys)
                 break;
             }
+            case RoamWire.TargetState:
+                OnTargetState(p, d);
+                break;
+            case RoamWire.ScreenLock:
+                OnScreenLock(p);
+                break;
             case RoamWire.Leave:
                 if (!controlled) break;
-                ApplyClipboard(RoamWire.ClipboardText(d));
+                ApplyClipboard(RoamClip.Parse(d));
                 WriteLog($"Roam: {p.Name} left");
                 StopControlled();
                 break;
@@ -611,16 +668,17 @@ public sealed partial class RoamEngine : IDisposable
     {
         if (_displays.Count == 0) return;
         var (px, py) = RoamGeometry.DipToPixel(x, y, _displays);
-        _platform.InjectMove(px, py);
+        _injector.Move(px, py);
     }
 
     /// <summary>Not controlled any more: lift every key and button still down from the other computer.</summary>
     void StopControlled()
     {
-        foreach (var k in _injectedKeys.ToList()) _platform.InjectKey(k, false);
-        foreach (var b in _injectedButtons.ToList()) _platform.InjectButton(b, false);
+        foreach (var k in _injectedKeys.ToList()) _injector.Key(k, false);
+        foreach (var b in _injectedButtons.ToList()) _injector.Button(b, false);
         _injectedKeys.Clear();
         _injectedButtons.Clear();
+        if (_controlledBy is not null) EndControlled();
         _controlledBy = null;
         SetGhost(null);
         UpdateMode();
@@ -651,6 +709,15 @@ public sealed partial class RoamEngine : IDisposable
                     StopControlled();
                 }
                 return;
+            }
+            switch (input.Kind)
+            {
+                case RoamInputKind.Key when _controller.Mode == RoamMode.Away:
+                    _stats.Captured();
+                    break;
+                case RoamInputKind.UnmappedKey:
+                    _stats.Unmapped(RoamKeyStats.WindowsCode(input.Dx, input.Dy, input.Down));
+                    return;
             }
             _controller.Handle(input);
         });
@@ -688,34 +755,43 @@ public sealed partial class RoamEngine : IDisposable
 
     // ---------------- clipboard (§9.4) ----------------
 
-    async Task<string?> CrossingClipboardAsync()
+    /// <summary>
+    /// What a crossing carries (§9.4, §12.5): the clipboard's text, or — with no text — its image as PNG (≤ 8 MB); null when
+    /// nothing changed since the last crossing either way.
+    /// </summary>
+    async Task<RoamClip?> CrossingClipboardAsync()
     {
         var cb = Clipboard();
         if (cb is null) return null;
         string? text;
+        byte[]? png = null;
         try
         {
-            var read = cb.GetTextAsync();
-            if (await Task.WhenAny(read, Task.Delay(_options.ClipboardTimeout)).ConfigureAwait(false) != read) return null;
-            text = await read.ConfigureAwait(false);
+            text = await Within(cb.GetTextAsync(), _options.ClipboardTimeout).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(text)) png = await Within(cb.GetImagePngAsync(), _options.ClipboardTimeout * 3).ConfigureAwait(false);
         }
         catch { return null; }
-        if (string.IsNullOrEmpty(text) || Encoding.UTF8.GetByteCount(text) > RoamWire.MaxClipboardBytes) return null;
+        if (RoamClip.Pick(text, png) is not { } clip) return null;
+        var sig = clip.Signature;
         lock (_gate)
         {
-            if (text == _lastCrossText) return null; // unchanged since the last crossing
-            _lastCrossText = text;
+            if (sig == _lastCrossText) return null; // unchanged since the last crossing
+            _lastCrossText = sig;
         }
-        return text;
+        return clip;
     }
 
-    void ApplyClipboard(string? text)
+    static async Task<T?> Within<T>(Task<T?> read, TimeSpan timeout) where T : class
+        => await Task.WhenAny(read, Task.Delay(timeout)).ConfigureAwait(false) == read ? await read.ConfigureAwait(false) : null;
+
+    void ApplyClipboard(RoamClip? clip)
     {
-        if (text is null) return;
-        _lastCrossText = text;
+        if (clip is null) return;
+        _lastCrossText = clip.Signature;
         var cb = Clipboard();
         if (cb is null) return;
-        After(() => _ = cb.SetTextAsync(text));
+        if (clip.Text is { } text) After(() => _ = cb.SetTextAsync(text));
+        else if (clip.Png is { } png) After(() => _ = cb.SetImageAsync(png));
     }
 
     // ---------------- the controller's requests ----------------
@@ -742,8 +818,19 @@ public sealed partial class RoamEngine : IDisposable
 
         public void Send(string peerId, string type, JsonObject data)
         {
-            if (_e.PeerFor(peerId) is { } p) _e.Enqueue(p, type, data);
+            if (_e.PeerFor(peerId) is not { } p) return;
+            if (type == RoamWire.Key) _e._stats.Sent();
+            _e.Enqueue(p, type, data);
         }
+
+        public void Rel(string peerId, int dx, int dy)
+        {
+            if (_e.PeerFor(peerId) is not { } p) return;
+            p.Outbox.OfferRel(dx, dy);
+            Wake(p);
+        }
+
+        public void Pill(RoamPill? pill) => _e.ShowPill(pill);
 
         public void Move(string peerId, double x, double y)
         {
@@ -829,6 +916,7 @@ public sealed partial class RoamEngine : IDisposable
             _disposed = true;
         });
         try { _timer.Dispose(); } catch { }
+        StopRound2();
         try { _platform.SetMode(RoamInputMode.Off); } catch { }
         try { _platform.Dispose(); } catch { }
     }

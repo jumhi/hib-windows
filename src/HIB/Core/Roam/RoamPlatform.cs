@@ -18,7 +18,7 @@ public enum RoamInputMode
     Controlled,
 }
 
-public enum RoamInputKind { Pointer, Motion, Button, Wheel, Key, LocalPhysical }
+public enum RoamInputKind { Pointer, Motion, Button, Wheel, Key, LocalPhysical, Hotkey, UnmappedKey }
 
 /// <summary>
 /// One input event from the platform. Pixels are this computer's physical pixels.
@@ -26,6 +26,8 @@ public enum RoamInputKind { Pointer, Motion, Button, Wheel, Key, LocalPhysical }
 ///  - Motion (Capture): relative motion in pixels.
 ///  - Button / Wheel / Key (Capture; Button also in Watch to track what is held).
 ///  - LocalPhysical (Controlled): someone touched this computer's own mouse or keyboard.
+///  - Hotkey (Watch, Capture; SPACE.md §12.5): a Roam hotkey on this computer's own keyboard (<see cref="Usage"/> = a <see cref="RoamHotkey"/>).
+///  - UnmappedKey (Capture; §12.2): a key with no HID usage — Dx = its virtual key, Dy = its scancode (counted, never sent).
 /// </summary>
 public readonly record struct RoamInput(RoamInputKind Kind, double X = 0, double Y = 0, RoamButton Button = RoamButton.Left,
     bool Down = false, int Dx = 0, int Dy = 0, int Usage = 0, bool AnyButtonDown = false)
@@ -36,6 +38,9 @@ public readonly record struct RoamInput(RoamInputKind Kind, double X = 0, double
     public static RoamInput Scroll(int dx, int dy) => new(RoamInputKind.Wheel, Dx: dx, Dy: dy);
     public static RoamInput KeyEvent(int usage, bool down) => new(RoamInputKind.Key, Usage: usage, Down: down);
     public static RoamInput Physical() => new(RoamInputKind.LocalPhysical);
+    public static RoamInput Hot(RoamHotkey hotkey) => new(RoamInputKind.Hotkey, Usage: (int)hotkey);
+    public static RoamInput Unmapped(int vk, int scan, bool extended) => new(RoamInputKind.UnmappedKey, Dx: vk, Dy: scan, Down: extended);
+    public RoamHotkey Hotkey => Kind == RoamInputKind.Hotkey ? (RoamHotkey)Usage : RoamHotkey.None;
 }
 
 public interface IRoamPlatform : IDisposable
@@ -56,9 +61,12 @@ public interface IRoamPlatform : IDisposable
     void Unpark(double px, double py);
 
     void InjectMove(double px, double py);
+    /// <summary>SPACE.md §12.4 ctlRel: relative motion in pixels, without MOUSEEVENTF_ABSOLUTE (games see raw motion).</summary>
+    void InjectRelative(int dx, int dy);
     void InjectButton(RoamButton button, bool down);
     void InjectWheel(int dx, int dy);
-    void InjectKey(int usage, bool down);
+    /// <summary>Types a key (HID usage). False when it has no mapping here or the system refused it (SendInput returned 0).</summary>
+    bool InjectKey(int usage, bool down);
     /// <summary>Releases the local OLE drag parked on the drop catcher (an injected left-button up at the park point).</summary>
     void FinishParkedDrag(bool cancel);
 
@@ -67,6 +75,9 @@ public interface IRoamPlatform : IDisposable
 
     /// <summary>Raised in order on one background thread.</summary>
     event Action<RoamInput>? Input;
+
+    /// <summary>Where the platform writes what went wrong (SendInput failures; rate-limited, never key contents).</summary>
+    Action<string>? Log { get => null; set { } }
 }
 
 /// <summary>No capture, no injection (non-Windows builds and tests that don't need input).</summary>
@@ -80,9 +91,10 @@ public sealed class NullRoamPlatform : IRoamPlatform
     public void Park(double px, double py, bool hide) { }
     public void Unpark(double px, double py) { }
     public void InjectMove(double px, double py) { }
+    public void InjectRelative(int dx, int dy) { }
     public void InjectButton(RoamButton button, bool down) { }
     public void InjectWheel(int dx, int dy) { }
-    public void InjectKey(int usage, bool down) { }
+    public bool InjectKey(int usage, bool down) => false;
     public void FinishParkedDrag(bool cancel) { }
     public event Action<RoamInput>? Input { add { } remove { } }
     public void Dispose() { }

@@ -19,6 +19,7 @@ sealed class FakeRoamPlatform : IRoamPlatform
     readonly List<(RoamButton B, bool Down)> _buttons = new();
     readonly List<(int Dx, int Dy)> _wheels = new();
     readonly List<(int Usage, bool Down)> _keys = new();
+    readonly List<(int Dx, int Dy)> _rels = new();
 
     public bool IsAvailable { get; set; } = true;
     public string UnavailableReason => "fake";
@@ -35,7 +36,8 @@ sealed class FakeRoamPlatform : IRoamPlatform
     public void InjectMove(double px, double py) { lock (_gate) _moves.Add((px, py)); }
     public void InjectButton(RoamButton button, bool down) { lock (_gate) _buttons.Add((button, down)); }
     public void InjectWheel(int dx, int dy) { lock (_gate) _wheels.Add((dx, dy)); }
-    public void InjectKey(int usage, bool down) { lock (_gate) _keys.Add((usage, down)); }
+    public void InjectRelative(int dx, int dy) { lock (_gate) _rels.Add((dx, dy)); }
+    public bool InjectKey(int usage, bool down) { lock (_gate) _keys.Add((usage, down)); return true; }
     public void FinishParkedDrag(bool cancel) { if (cancel) DragCancels++; }
     public void Dispose() { }
 
@@ -44,6 +46,7 @@ sealed class FakeRoamPlatform : IRoamPlatform
     public List<(RoamButton B, bool Down)> Buttons { get { lock (_gate) return _buttons.ToList(); } }
     public List<(int Dx, int Dy)> Wheels { get { lock (_gate) return _wheels.ToList(); } }
     public List<(int Usage, bool Down)> Keys { get { lock (_gate) return _keys.ToList(); } }
+    public List<(int Dx, int Dy)> Rels { get { lock (_gate) return _rels.ToList(); } }
 }
 
 /// <summary>Records what the controller asks for.</summary>
@@ -59,6 +62,8 @@ sealed class RecordingHost : IRoamControllerHost
     public RoamEdgeHint? Probe;
     public (RoamNeighbor Peer, double X, double Y, IReadOnlyList<string> Files)? Dropped;
     public (RoamSide Side, RoamNeighbor Peer)? LearnedSide;
+    public readonly List<(int Dx, int Dy)> Rels = new();
+    public readonly List<RoamPill?> Pills = new();
 
     public void Enter(RoamNeighbor peer, double x, double y) => Entered = (peer, x, y);
     public void Send(string peerId, string type, JsonObject data) => Sent.Add((type, data));
@@ -72,6 +77,8 @@ sealed class RecordingHost : IRoamControllerHost
     public void FinishLocalDrag(bool cancel) { }
     public void Learned(RoamSide side, RoamNeighbor peer, string? screenId) => LearnedSide = (side, peer);
     public void StateChanged() { }
+    public void Rel(string peerId, int dx, int dy) => Rels.Add((dx, dy));
+    public void Pill(RoamPill? pill) => Pills.Add(pill);
 }
 
 /// <summary>
@@ -273,29 +280,38 @@ public class RoamTests
     // ---------------- the outbox ----------------
 
     [Fact]
-    public void Moves_coalesce_to_one_per_8_ms_and_never_jump_a_key()
+    public void Moves_go_at_once_and_coalesce_only_while_a_frame_is_in_flight_never_jumping_a_key()
     {
+        // SPACE.md §12.3: no fixed timer. The pump takes a move the moment it is offered…
         var box = new RoamOutbox();
-        var t = new DateTime(2026, 1, 1);
         box.OfferMove(1, 1);
-        Assert.True(box.TryTake(t, out var first, out _));
+        Assert.True(box.TryTake(out var first));
         Assert.Equal(RoamWire.Move, first.Type);
-        for (var i = 2; i <= 6; i++) box.OfferMove(i, i); // 1 ms apart, all inside the window
+        // …and while that frame is being written, newer positions replace the one waiting: only the newest goes next.
+        for (var i = 2; i <= 6; i++) box.OfferMove(i, i);
         Assert.Equal(1, box.Count);
-        Assert.False(box.TryTake(t.AddMilliseconds(3), out _, out var wait));
-        Assert.Equal(5, wait.TotalMilliseconds, 3);
         box.Enqueue(RoamWire.Key, RoamWire.KeyData(4, true));
         box.OfferMove(7, 7); // after the key: its own slot
-        Assert.False(box.TryTake(t.AddMilliseconds(7), out _, out _)); // the key waits behind the move
-        Assert.True(box.TryTake(t.AddMilliseconds(8), out var move, out _));
+        Assert.Equal(3, box.Count);
+        Assert.True(box.TryTake(out var move));
         Assert.Equal(6, (double)move.Data!["x"]!);
-        Assert.True(box.TryTake(t.AddMilliseconds(8), out var key, out _));
+        Assert.True(box.TryTake(out var key));
         Assert.Equal(RoamWire.Key, key.Type);
-        Assert.False(box.TryTake(t.AddMilliseconds(9), out _, out _));
-        Assert.True(box.TryTake(t.AddMilliseconds(16), out var last, out _));
+        Assert.True(box.TryTake(out var last));
         Assert.Equal(7, (double)last.Data!["x"]!);
-        Assert.False(box.TryTake(t.AddMilliseconds(30), out _, out var idle));
-        Assert.Equal(Timeout.InfiniteTimeSpan, idle);
+        Assert.False(box.TryTake(out _));
+
+        // §12.4 relative motion waiting at the end adds up; a key between keeps them apart.
+        box.OfferRel(3, -1);
+        box.OfferRel(2, 2);
+        box.Enqueue(RoamWire.Button, RoamWire.ButtonData(RoamButton.Left, true));
+        box.OfferRel(-1, 0);
+        Assert.True(box.TryTake(out var rel));
+        Assert.Equal(RoamWire.Rel, rel.Type);
+        Assert.Equal((5, 1), ((int)rel.Data!["dx"]!, (int)rel.Data!["dy"]!));
+        Assert.True(box.TryTake(out _));
+        Assert.True(box.TryTake(out var rel2));
+        Assert.Equal(-1, (int)rel2.Data!["dx"]!);
     }
 
     // ---------------- keys ----------------
@@ -462,7 +478,7 @@ public class RoamTests
             Assert.Equal(new RoamRect(0, 0, 1512, 982), Assert.Single(h.Screens).Rect);
         }
         Assert.Equal("""{"type":"ctlEnter","data":{"x":0,"y":420.5,"clipboard":null}}""", LinkServer.BuildEnvelope(RoamWire.Enter, RoamWire.EnterData(0, 420.5, null)));
-        Assert.Equal("""{"type":"ctlEnter","data":{"x":0,"y":1,"clipboard":{"text":"hi"}}}""", LinkServer.BuildEnvelope(RoamWire.Enter, RoamWire.EnterData(0, 1, "hi")));
+        Assert.Equal("""{"type":"ctlEnter","data":{"x":0,"y":1,"clipboard":{"text":"hi"}}}""", LinkServer.BuildEnvelope(RoamWire.Enter, RoamWire.EnterData(0, 1, new RoamClip("hi", null))));
         Assert.Equal("""{"type":"ctlMove","data":{"x":12.5,"y":431}}""", LinkServer.BuildEnvelope(RoamWire.Move, RoamWire.MoveData(12.5, 431.0004)));
         Assert.Equal("""{"type":"ctlButton","data":{"b":"forward","down":true}}""", LinkServer.BuildEnvelope(RoamWire.Button, RoamWire.ButtonData(RoamButton.Forward, true)));
         Assert.Equal("""{"type":"ctlWheel","data":{"dx":0,"dy":-120}}""", LinkServer.BuildEnvelope(RoamWire.Wheel, RoamWire.WheelData(0, -120)));
@@ -588,7 +604,7 @@ public class RoamTests
         Assert.True(await Eventually.TrueAsync(() => a.Core.Roam.Mode == RoamMode.Home));
         Assert.Equal((1917.0, 540.0), pa.Unparked!.Value);
         Assert.Null(b.Core.Roam.ControlledById);
-        Assert.Contains((0x05, false), pb.Keys); // lifted on B
+        Assert.True(await Eventually.TrueAsync(() => pb.Keys.Contains((0x05, false)))); // lifted on B
         Assert.Equal(RoamInputMode.Watch, pa.Mode);
         Assert.Equal(RoamInputMode.Watch, pb.Mode);
 
@@ -733,6 +749,7 @@ public class RoamTests
         // It leaves without lifting its keys: this PC lifts them itself.
         await mac.SendRawAsync("""{"type":"ctlLeave","data":{"clipboard":null}}""");
         Assert.True(await Eventually.TrueAsync(() => host.Core.Roam.ControlledById is null));
+        Assert.True(host.Core.Roam.DrainInput(TimeSpan.FromSeconds(2)));
         Assert.Contains((224, false), pc.Keys);
         Assert.Contains((6, false), pc.Keys);
 

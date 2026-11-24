@@ -41,8 +41,8 @@ public sealed class TestHost : IAsyncDisposable
             PingInterval = pingInterval,
             ActivityTimeout = activityTimeout,
             Space = space ?? new HIB.Core.Space.SpaceOptions(),
-            // Tests never capture or inject real input.
-            Roam = roam ?? new HIB.Core.Roam.RoamOptions { Platform = () => new HIB.Core.Roam.NullRoamPlatform() },
+            // Tests never capture or inject real input, nor touch Mouse Keys, keep the PC awake or lock it.
+            Roam = WithoutSystem(roam ?? new HIB.Core.Roam.RoamOptions { Platform = () => new HIB.Core.Roam.NullRoamPlatform() }),
             // …nor press keys, lock the screen or change the volume (Point to act, SPACE.md §11.3).
             Desktop = desktop ?? (() => new HIB.Core.Act.NullDesktopControl()),
             Stats = stats ?? (() => new HIB.Core.Act.SystemStats()),
@@ -53,6 +53,14 @@ public sealed class TestHost : IAsyncDisposable
         Clipboard = new FakeClipboard();
         Core.AttachClipboard(Clipboard, TimeSpan.FromMilliseconds(200));
         Core.Start();
+    }
+
+    /// <summary>The real system services (SPACE.md §12) are replaced unless the test brought its own fake.</summary>
+    static HIB.Core.Roam.RoamOptions WithoutSystem(HIB.Core.Roam.RoamOptions o)
+    {
+        if (o.System.Method == ((Func<HIB.Core.Roam.IRoamSystem>)HIB.Core.Roam.RoamSystems.CreateDefault).Method)
+            o.System = () => new HIB.Core.Roam.NullRoamSystem();
+        return o;
     }
 
     static int NextFreePort()

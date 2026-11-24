@@ -364,6 +364,7 @@ public sealed class PeerNetwork : IDisposable
     {
         var ws = new ClientWebSocket();
         ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        ws.Options.DangerousDeflateOptions = null; // SPACE.md §12.3: compression off on the peer link
         try
         {
             var host = IPAddress.TryParse(ip, out var addr) && addr.AddressFamily == AddressFamily.InterNetworkV6 ? $"[{ip}]" : ip;

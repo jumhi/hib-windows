@@ -113,14 +113,27 @@ public static class RoamWire
     public const string Release = "ctlRelease";
     public const string DragBegin = "ctlDragBegin";
     public const string DragCancel = "ctlDragCancel";
+    /// <summary>§12.4: relative motion for a computer whose app in front locks the cursor (a game).</summary>
+    public const string Rel = "ctlRel";
+    /// <summary>§12.4: the state of the app in front of the sender (normal, fullscreen, locked).</summary>
+    public const string TargetState = "ctlTargetState";
+    /// <summary>§12.5: the sender's screen was locked; lock this one too.</summary>
+    public const string ScreenLock = "ctlScreenLock";
 
     /// <summary>The most clipboard text a crossing carries (§9.4: ≤ 1 MB).</summary>
     public const int MaxClipboardBytes = 1024 * 1024;
 
-    static JsonNode? Clip(string? text) => text is null ? null : new JsonObject { ["text"] = text };
+    /// <summary>§9.4 / §12.5: a crossing carries text or a PNG (or null).</summary>
+    public static JsonObject EnterData(double x, double y, RoamClip? clipboard)
+        => new() { ["x"] = CtlHello.Round(x), ["y"] = CtlHello.Round(y), ["clipboard"] = clipboard?.ToWire() };
 
-    public static JsonObject EnterData(double x, double y, string? clipboard)
-        => new() { ["x"] = CtlHello.Round(x), ["y"] = CtlHello.Round(y), ["clipboard"] = Clip(clipboard) };
+    public static JsonObject LeaveData(RoamClip? clipboard) => new() { ["clipboard"] = clipboard?.ToWire() };
+
+    public static JsonObject RelData(int dx, int dy) => new() { ["dx"] = dx, ["dy"] = dy };
+
+    public static JsonObject TargetStateData(RoamGameMode mode, string app) => new() { ["mode"] = RoamGameModes.Wire(mode), ["app"] = app };
+
+    public static JsonObject ScreenLockData() => new();
 
     public static JsonObject MoveData(double x, double y) => new() { ["x"] = CtlHello.Round(x), ["y"] = CtlHello.Round(y) };
 
@@ -129,8 +142,6 @@ public static class RoamWire
     public static JsonObject WheelData(int dx, int dy) => new() { ["dx"] = dx, ["dy"] = dy };
 
     public static JsonObject KeyData(int usage, bool down) => new() { ["usage"] = usage, ["down"] = down };
-
-    public static JsonObject LeaveData(string? clipboard) => new() { ["clipboard"] = Clip(clipboard) };
 
     public static JsonObject ReleaseData() => new();
 
@@ -157,27 +168,25 @@ public sealed record RoamOutboxItem(string Type, JsonObject? Data, System.Thread
     Func<System.Threading.Tasks.Task>? Run = null);
 
 /// <summary>
-/// The send queue to one peer: strictly in order, with mouse moves coalesced to at most one per
-/// <see cref="MoveInterval"/> (the newest position wins). Keys, buttons and wheel are never coalesced; a move
-/// queued before a key is sent before it, at the position it had when the key came.
+/// The send queue to one peer, strictly in order (SPACE.md §12.3: no fixed timer). A move goes out the moment the socket is
+/// free; while a frame is still being written, a newer position replaces the move waiting at the end of the queue, so the
+/// target always gets the newest one next. Relative moves (ctlRel) waiting at the end add up. Keys, buttons and wheel are
+/// never coalesced; a move queued before a key is sent before it, at the position it had when the key came.
 /// Not thread-safe on its own: the engine serialises access.
 /// </summary>
 public sealed class RoamOutbox
 {
-    public static readonly TimeSpan MoveInterval = TimeSpan.FromMilliseconds(8);
-
     sealed class Item
     {
         public required string Type;
         public JsonObject? Data;
         public System.Threading.Tasks.Task<JsonObject>? Deferred;
         public Func<System.Threading.Tasks.Task>? Run;
-        public bool IsMove;
+        public bool IsMove, IsRel;
         public double X, Y;
     }
 
     readonly LinkedList<Item> _queue = new();
-    DateTime _lastMove = DateTime.MinValue;
 
     public int Count => _queue.Count;
 
@@ -201,31 +210,28 @@ public sealed class RoamOutbox
         _queue.AddLast(new Item { Type = RoamWire.Move, IsMove = true, X = x, Y = y });
     }
 
-    /// <summary>
-    /// The next item to send now, or false with how long to wait (<see cref="System.Threading.Timeout.InfiniteTimeSpan"/> when empty).
-    /// </summary>
-    public bool TryTake(DateTime now, out RoamOutboxItem item, out TimeSpan wait)
+    /// <summary>Relative motion (§12.4): added to the ctlRel waiting at the end, if any.</summary>
+    public void OfferRel(int dx, int dy)
+    {
+        if (dx == 0 && dy == 0) return;
+        if (_queue.Last?.Value is { IsRel: true } last)
+        {
+            last.X += dx;
+            last.Y += dy;
+            return;
+        }
+        _queue.AddLast(new Item { Type = RoamWire.Rel, IsRel = true, X = dx, Y = dy });
+    }
+
+    /// <summary>The next item to send, or false when the queue is empty.</summary>
+    public bool TryTake(out RoamOutboxItem item)
     {
         item = null!;
-        wait = System.Threading.Timeout.InfiniteTimeSpan;
         if (_queue.First?.Value is not { } head) return false;
-        if (head.IsMove)
-        {
-            var due = _lastMove + MoveInterval;
-            if (now < due)
-            {
-                wait = due - now;
-                return false;
-            }
-            _lastMove = now;
-            _queue.RemoveFirst();
-            item = new RoamOutboxItem(RoamWire.Move, RoamWire.MoveData(head.X, head.Y));
-            wait = TimeSpan.Zero;
-            return true;
-        }
         _queue.RemoveFirst();
-        item = new RoamOutboxItem(head.Type, head.Data, head.Deferred, head.Run);
-        wait = TimeSpan.Zero;
+        item = head.IsMove ? new RoamOutboxItem(RoamWire.Move, RoamWire.MoveData(head.X, head.Y))
+            : head.IsRel ? new RoamOutboxItem(RoamWire.Rel, RoamWire.RelData((int)head.X, (int)head.Y))
+            : new RoamOutboxItem(head.Type, head.Data, head.Deferred, head.Run);
         return true;
     }
 

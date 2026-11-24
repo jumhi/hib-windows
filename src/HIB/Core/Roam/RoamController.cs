@@ -7,6 +7,10 @@
 // With a room (SPACE.md §10.3), a computer placed in it is reached through portals instead: the edge segments
 // where one of this PC's monitors faces one of its screens. Away, the virtual cursor leaves the target's
 // screens the same way — home, or straight on to a third computer.
+// Round 2 (SPACE.md §12.4–§12.5): a computer whose app in front locks the cursor (a game) gets relative motion and is
+// never left by an edge; with a full-screen app on either side only the gate (top 15 % of the shared edge) opens, on a
+// double push; the lock hotkey keeps the mouse where it is, the jump hotkeys move it to the computer on that side; each
+// computer has its own pointer and scroll speed (and natural scrolling).
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +24,20 @@ namespace HIB.Core.Roam;
 /// room's portals (§10.3), and <see cref="Side"/> is only where its group sits (for words and learning).
 /// </summary>
 public sealed record RoamNeighbor(string PeerId, string Name, RoamSide Side, IReadOnlyList<RoamRect> Screens, string Platform, bool CmdAsCtrl,
-    bool InRoom = false);
+    bool InRoom = false, RoamGameMode Game = RoamGameMode.Normal, double PointerSpeed = 1, double ScrollSpeed = 1, bool NaturalScroll = false);
+
+public enum RoamPillKind { Gate, GameMode, Locked, Unlocked, AdminApp }
+
+/// <summary>A short message pill (SPACE.md §12.2, §12.4, §12.5). <see cref="At"/>: beside that edge (pixels), else mid-screen.</summary>
+public sealed record RoamPill(RoamPillKind Kind, string Text, RoamEdgeHint? At = null)
+{
+    public const string GateText = "Game running — push again here to leave";
+    public const string UnlockedText = "Unlocked · the mouse moves between computers again";
+    /// <summary>The hotkeys as a PC keyboard says them.</summary>
+    public const string LeaveKeys = "Scroll Lock or Ctrl+Alt+Shift+L";
+    public static string GameModeText(string name) => $"Game mode · the mouse stays on {name} · {LeaveKeys} to leave";
+    public static string LockedText(string name) => $"Locked to {name}";
+}
 
 /// <summary>
 /// The edge glow: which edge of which local monitor (pixels) and where along it the cursor is (pixels). With a room, the glow
@@ -55,6 +72,10 @@ public interface IRoamControllerHost
     /// <summary>A dead edge was pushed 3 times: <paramref name="peer"/> now sits on <paramref name="side"/> (of monitor <paramref name="screenId"/>).</summary>
     void Learned(RoamSide side, RoamNeighbor peer, string? screenId);
     void StateChanged();
+    /// <summary>§12.4: queue a coalesced ctlRel (relative pixels) for a computer whose game locks the cursor.</summary>
+    void Rel(string peerId, int dx, int dy) { }
+    /// <summary>§12.4–§12.5: show a pill (null hides the one showing).</summary>
+    void Pill(RoamPill? pill) { }
 }
 
 public sealed class RoamController
@@ -87,6 +108,16 @@ public sealed class RoamController
     // room (§10.3)
     RoomMap _room = RoomMap.Empty;
     string _own = "";
+    // round 2 (§12.4–§12.5)
+    readonly DoublePushGate _push = new();
+    (RoamSide Side, RoamRect Edge)? _pushEdge;
+    readonly RoamDelta _rel = new();
+    readonly RoamDelta _wheel = new();
+    RoamGameMode _localGame;
+    bool _userLock;
+    RoamSide _exitSide;
+    (double X, double Y) _lastPointer;
+    RoamPill? _pill;
 
     static readonly RoamSide[] AllSides = { RoamSide.Left, RoamSide.Right, RoamSide.Above, RoamSide.Below };
 
@@ -108,6 +139,36 @@ public sealed class RoamController
     public IReadOnlyList<string>? DragFiles => _dragFiles;
     public RoamEdgeHint? CurrentHint => _hint;
     public IReadOnlyList<RoamNeighbor> Neighbors => _neighbors;
+
+    /// <summary>This computer's name (the lock pill says "Locked to &lt;name&gt;" at home).</summary>
+    public string LocalName { get; set; } = "this PC";
+
+    /// <summary>The lock hotkey holds the mouse on the computer it is on (§12.5).</summary>
+    public bool UserLock => _userLock;
+
+    /// <summary>The state of this computer's own app in front (§12.4; Normal when game mode is off).</summary>
+    public RoamGameMode LocalGame => _localGame;
+
+    /// <summary>The pill showing now (tests).</summary>
+    public RoamPill? CurrentPill => _pill;
+
+    /// <summary>The target's game locks the cursor: motion goes as ctlRel and no edge leads away.</summary>
+    public bool RelativeMode => _target is { Game: RoamGameMode.Locked };
+
+    public void SetLocalGame(RoamGameMode mode)
+    {
+        if (mode == _localGame) return;
+        _localGame = mode;
+        _push.Reset();
+        _pushEdge = null;
+        if (_pill?.Kind == RoamPillKind.Gate) SetPill(null);
+    }
+
+    /// <summary>
+    /// Leaving a computer with a full-screen (or locked) app in front — this one at home, the target while away — only the gate
+    /// opens. Coming back into the game's computer is never gated.
+    /// </summary>
+    bool Gated(RoamNeighbor? away) => away is null ? _localGame != RoamGameMode.Normal : away.Game != RoamGameMode.Normal;
 
     public void SetDisplays(IReadOnlyList<RoamDisplay> displays)
     {
@@ -138,7 +199,11 @@ public sealed class RoamController
         {
             var now = _neighbors.FirstOrDefault(n => string.Equals(n.PeerId, t.PeerId, StringComparison.OrdinalIgnoreCase));
             if (now is null) ComeHome(_exit, sendLeave: true);
-            else _target = now;
+            else
+            {
+                _target = now;
+                if (now.Game != t.Game) GameChanged(t.Game, now);
+            }
         }
         if (_neighbors.Count == 0) SetHint(null);
     }
@@ -159,10 +224,13 @@ public sealed class RoamController
                 OnButton(input.Button, input.Down);
                 break;
             case RoamInputKind.Wheel:
-                if (_target is { } t && (input.Dx != 0 || input.Dy != 0)) _host.Send(t.PeerId, RoamWire.Wheel, RoamWire.WheelData(input.Dx, input.Dy));
+                if (_target is { } t && (input.Dx != 0 || input.Dy != 0)) OnWheel(t, input.Dx, input.Dy);
                 break;
             case RoamInputKind.Key:
                 if (_target is not null) OnKey(input.Usage, input.Down);
+                break;
+            case RoamInputKind.Hotkey:
+                Hotkey(input.Hotkey);
                 break;
         }
     }
@@ -174,7 +242,16 @@ public sealed class RoamController
         if (_pixels.Count == 0) return;
         var now = _clock();
         var (cx, cy) = RoamGeometry.ClampIntoScreens(px, py, _pixels);
+        _lastPointer = (cx, cy);
         var scale = RoamGeometry.ScaleAt(cx, cy, _displays);
+        if (_userLock)
+        {
+            // §12.5 locked to this computer: no glow, no crossing, no learning.
+            SetHint(null);
+            return;
+        }
+        if (_pushEdge is { } pe && Gated(null))
+            _push.Feed(pe, false, DistanceToScreenEdge(pe.Side, cx, cy, pe.Edge) / scale, now);
         var screenIndex = RoamGeometry.ScreenAt(cx, cy, _pixels);
         var screen = screenIndex >= 0 ? _pixels[screenIndex] : _bounds;
         var display = screenIndex >= 0 ? _displays[screenIndex] : null;
@@ -222,6 +299,9 @@ public sealed class RoamController
                 WaitForDrag(new RoamEdgeHint(n.Side, n.PeerId, n.Name, screen, RoamSides.IsHorizontal(n.Side) ? cy : cx), now);
                 return;
             }
+            var horizontal = RoamSides.IsHorizontal(n.Side);
+            var (s0, s1) = horizontal ? (_bounds.Y, _bounds.Bottom) : (_bounds.X, _bounds.Right);
+            if (!GateOpen(n.Side, _bounds, horizontal ? cy : cx, s0, s1, scale, null, n, screen, now)) return;
             Cross(n, cx, cy, scale);
             return;
         }
@@ -325,6 +405,13 @@ public sealed class RoamController
                 WaitForDrag(new RoamEdgeHint(side, n.PeerId, n.Name, screen, RoamSides.IsHorizontal(side) ? cy : cx), now);
                 return true;
             }
+            if (Gated(null))
+            {
+                var s = display.SafeScale;
+                var (g0, g1) = _room.Segment(c.Portal) is { } seg ? (seg.Start * s, seg.End * s)
+                    : RoamSides.IsHorizontal(side) ? (screen.Y, screen.Bottom) : (screen.X, screen.Right);
+                if (!GateOpen(side, screen, RoamSides.IsHorizontal(side) ? cy : cx, g0, g1, scale, null, n, screen, now)) return true;
+            }
             Enter(n, c.X, c.Y, side, cx, cy, scale);
             return true;
         }
@@ -354,9 +441,15 @@ public sealed class RoamController
         _vx = vx;
         _vy = vy;
         _exit = Inside(side, cx, cy, RoamGeometry.ReturnInset * scale);
+        _exitSide = side;
         _heldKeys.Clear();
         _heldButtons.Clear();
+        _rel.Reset();
+        _wheel.Reset();
+        _push.Reset();
+        _pushEdge = null;
         SetHint(null);
+        SetPill(n.Game == RoamGameMode.Locked ? GamePill(n) : null);
         var drag = _dragFiles is { Count: > 0 };
         // A file drag stays parked where it left (on the drop catcher); otherwise park hidden mid-screen.
         var park = drag ? _exit : ParkPoint();
@@ -402,8 +495,22 @@ public sealed class RoamController
     void OnMotion(double dxPx, double dyPx)
     {
         var t = _target!;
-        var nx = _vx + dxPx / _parkScale;
-        var ny = _vy + dyPx / _parkScale;
+        var speed = RoamSpeed.Clamp(t.PointerSpeed);
+        if (t.Game == RoamGameMode.Locked)
+        {
+            // §12.4: the game steers with raw motion; the virtual cursor stays put and no edge leads away.
+            var (rx, ry) = _rel.Add(dxPx * speed, dyPx * speed);
+            if (rx != 0 || ry != 0) _host.Rel(t.PeerId, rx, ry);
+            return;
+        }
+        var nx = _vx + dxPx * speed / _parkScale;
+        var ny = _vy + dyPx * speed / _parkScale;
+        if (_userLock)
+        {
+            // §12.5 locked to this computer: it stops at the edges.
+            Stay(t, nx, ny);
+            return;
+        }
         if (t.InRoom && _room.Has(t.PeerId))
         {
             RoomMotion(t, nx, ny);
@@ -411,12 +518,17 @@ public sealed class RoamController
         }
         var home = RoamSides.Mirror(t.Side);
         var tb = RoamGeometry.Bounds(t.Screens);
+        if (_pushEdge is { } pe && Gated(t))
+            _push.Feed(pe, false, DistanceToScreenEdge(pe.Side, nx, ny, pe.Edge), _clock());
         if (RoamGeometry.Beyond(home, nx, ny, tb) > 0)
         {
             var (cx, cy) = RoamGeometry.ClampIntoScreens(nx, ny, t.Screens);
             var ok = RoamGeometry.AtEdge(home, cx, cy, tb)
                      && !RoamGeometry.InCorner(home, cx, cy, t.Screens, RoamGeometry.CornerSize)
                      && (_heldButtons.Count == 0 || _dragAway);
+            var horizontal = RoamSides.IsHorizontal(home);
+            if (ok && Gated(t))
+                ok = GateOpen(home, tb, horizontal ? cy : cx, horizontal ? tb.Y : tb.X, horizontal ? tb.Bottom : tb.Right, 1, t, t, null, _clock());
             if (ok)
             {
                 var ratio = RoamGeometry.EdgeRatio(home, cx, cy, tb);
@@ -426,7 +538,14 @@ public sealed class RoamController
                 return;
             }
         }
-        var (x, y) = RoamGeometry.ClampIntoScreens(nx, ny, t.Screens);
+        Stay(t, nx, ny);
+    }
+
+    /// <summary>The virtual cursor moves on the target's screens and stops at their edges.</summary>
+    void Stay(RoamNeighbor t, double nx, double ny)
+    {
+        var rects = t.InRoom && _room.Has(t.PeerId) ? _room.Of(t.PeerId).Select(s => s.Dips).ToList() : t.Screens;
+        var (x, y) = RoamGeometry.ClampIntoScreens(nx, ny, rects);
         if (x == _vx && y == _vy) return;
         _vx = x;
         _vy = y;
@@ -441,6 +560,8 @@ public sealed class RoamController
     {
         var screens = _room.Of(t.PeerId);
         var rects = screens.Select(s => s.Dips).ToList();
+        if (_pushEdge is { } pe && Gated(t))
+            _push.Feed(pe, false, DistanceToScreenEdge(pe.Side, nx, ny, pe.Edge), _clock());
         if (!rects.Any(r => r.Contains(nx, ny)))
         {
             var i = RoamGeometry.ScreenAt(_vx, _vy, rects);
@@ -450,6 +571,13 @@ public sealed class RoamController
                 var (cx, cy) = cur.Dips.Clamp(nx, ny);
                 var ok = !RoamGeometry.InCorner(side, cx, cy, new[] { cur.Dips }, RoamGeometry.CornerSize) && (_heldButtons.Count == 0 || _dragAway);
                 var c = ok ? _room.Cross(t.PeerId, cur.Id, side, cx, cy, id => IsOwn(id) || (!_dragAway && IsRoomTarget(id) && !SpaceIds.Same(id, t.PeerId))) : null;
+                if (c is not null && Gated(t))
+                {
+                    var horizontal = RoamSides.IsHorizontal(side);
+                    var (g0, g1) = _room.Segment(c.Portal) is { } seg ? (seg.Start, seg.End)
+                        : horizontal ? (cur.Dips.Y, cur.Dips.Bottom) : (cur.Dips.X, cur.Dips.Right);
+                    if (!GateOpen(side, cur.Dips, horizontal ? cy : cx, g0, g1, 1, t, t, null, _clock())) c = null;
+                }
                 if (c is not null)
                 {
                     if (IsOwn(c.Portal.ToComputer))
@@ -504,9 +632,14 @@ public sealed class RoamController
         _host.Leave(old);
         _heldKeys.Clear();
         _heldButtons.Clear();
+        _rel.Reset();
+        _wheel.Reset();
+        _push.Reset();
+        _pushEdge = null;
         _target = next;
         _vx = x;
         _vy = y;
+        SetPill(next.Game == RoamGameMode.Locked ? GamePill(next) : null);
         _host.Enter(next, x, y);
         _watchdog.Arm(_clock());
         _host.StateChanged();
@@ -582,6 +715,169 @@ public sealed class RoamController
         _dragFiles = files is { Count: > 0 } ? files.ToList() : null;
     }
 
+    // ---------------- round 2: gate, game mode, wheel, hotkeys (§12.4–§12.5) ----------------
+
+    /// <summary>
+    /// With a full-screen app on either side, may the cursor cross this edge now? Only inside the gate (the first 15 % of the
+    /// edge segment <paramref name="s0"/>…<paramref name="s1"/>, at least 60 points) and on the second push within 500 ms; the
+    /// first push shows "Game running — push again here to leave".
+    /// </summary>
+    bool GateOpen(RoamSide side, RoamRect edge, double along, double s0, double s1, double unit, RoamNeighbor? away, RoamNeighbor n,
+        RoamRect? homeScreen, DateTime now)
+    {
+        if (!Gated(away)) return true;
+        if (!RoamGate.Contains(along, s0, s1, unit)) return false;
+        var key = (side, edge);
+        _pushEdge = key;
+        switch (_push.Feed(key, true, 0, now))
+        {
+            case RoamPush.First:
+                SetPill(new RoamPill(RoamPillKind.Gate, RoamPill.GateText, GateHint(side, n, homeScreen, along, s0, s1, unit)));
+                return false;
+            case RoamPush.Cross:
+                if (_pill?.Kind == RoamPillKind.Gate) SetPill(null);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Where the gate pill shows: at the gate at home; away, at the top of the edge this PC was left by.</summary>
+    RoamEdgeHint GateHint(RoamSide side, RoamNeighbor n, RoamRect? homeScreen, double along, double s0, double s1, double unit)
+    {
+        if (homeScreen is { } screen)
+        {
+            var (g0, g1) = RoamGate.Of(s0, s1, unit);
+            return new RoamEdgeHint(side, n.PeerId, n.Name, screen, along, g0, g1);
+        }
+        var exitScreen = ExitScreen();
+        var scale = RoamGeometry.ScaleAt(_exit.X, _exit.Y, _displays);
+        var horizontal = RoamSides.IsHorizontal(_exitSide);
+        var (e0, e1) = horizontal ? (exitScreen.Y, exitScreen.Bottom) : (exitScreen.X, exitScreen.Right);
+        var (h0, h1) = RoamGate.Of(e0, e1, scale);
+        return new RoamEdgeHint(_exitSide, n.PeerId, n.Name, exitScreen, (h0 + h1) / 2, h0, h1);
+    }
+
+    RoamRect ExitScreen() => _pixels.Count == 0 ? _bounds : _pixels[Math.Max(0, RoamGeometry.ScreenAt(_exit.X, _exit.Y, _pixels))];
+
+    RoamEdgeHint ExitHint(RoamNeighbor n)
+        => new(_exitSide, n.PeerId, n.Name, ExitScreen(), RoamSides.IsHorizontal(_exitSide) ? _exit.Y : _exit.X);
+
+    RoamPill GamePill(RoamNeighbor n) => new(RoamPillKind.GameMode, RoamPill.GameModeText(n.Name), ExitHint(n));
+
+    /// <summary>The target's app in front changed state while we are on it.</summary>
+    void GameChanged(RoamGameMode before, RoamNeighbor now)
+    {
+        _rel.Reset();
+        _push.Reset();
+        _pushEdge = null;
+        if (now.Game == RoamGameMode.Locked) SetPill(GamePill(now));
+        else if (before == RoamGameMode.Locked && _pill?.Kind == RoamPillKind.GameMode) SetPill(null);
+    }
+
+    /// <summary>§12.3 / §12.5: the wheel at the target's scroll speed (natural scrolling reverses it), fractions carried over.</summary>
+    void OnWheel(RoamNeighbor t, int dx, int dy)
+    {
+        var (wx, wy) = RoamSpeed.Wheel(dx, dy, t.ScrollSpeed, t.NaturalScroll);
+        var (ix, iy) = _wheel.Add(wx, wy);
+        if (ix != 0 || iy != 0) _host.Send(t.PeerId, RoamWire.Wheel, RoamWire.WheelData(ix, iy));
+    }
+
+    /// <summary>
+    /// §12.5 hotkeys from this computer's own keyboard. Lock: on a computer whose game holds the cursor it leaves the game (the
+    /// mouse comes home); otherwise it toggles "Locked to &lt;name&gt;". Jump: to the computer on that side, centre of its main screen.
+    /// </summary>
+    public void Hotkey(RoamHotkey k)
+    {
+        if (k == RoamHotkey.Lock)
+        {
+            if (_target is { Game: RoamGameMode.Locked })
+            {
+                ComeHome(_exit, sendLeave: true);
+                return;
+            }
+            _userLock = !_userLock;
+            var at = _target is { } t ? ExitHint(t) : HereHint();
+            SetPill(_userLock ? new RoamPill(RoamPillKind.Locked, RoamPill.LockedText(_target?.Name ?? LocalName), at)
+                : new RoamPill(RoamPillKind.Unlocked, RoamPill.UnlockedText, at));
+            if (_userLock) SetHint(null);
+            _host.StateChanged();
+            return;
+        }
+        if (RoamHotkeyDetector.JumpSide(k) is { } side) Jump(side);
+    }
+
+    /// <summary>The bottom of the monitor the cursor is on (pills at home).</summary>
+    RoamEdgeHint? HereHint()
+    {
+        if (_pixels.Count == 0) return null;
+        var screen = _pixels[Math.Max(0, RoamGeometry.ScreenAt(_lastPointer.X, _lastPointer.Y, _pixels))];
+        return new RoamEdgeHint(RoamSide.Below, "", LocalName, screen, screen.X + screen.W / 2);
+    }
+
+    static (double X, double Y) Unit(RoamSide side) => side switch
+    {
+        RoamSide.Left => (-1, 0),
+        RoamSide.Right => (1, 0),
+        RoamSide.Above => (0, -1),
+        _ => (0, 1),
+    };
+
+    static bool Toward(RoamSide side, double dx, double dy) => side switch
+    {
+        RoamSide.Left => dx < 0 && Math.Abs(dx) >= Math.Abs(dy),
+        RoamSide.Right => dx > 0 && Math.Abs(dx) >= Math.Abs(dy),
+        RoamSide.Above => dy < 0 && Math.Abs(dy) > Math.Abs(dx),
+        _ => dy > 0 && Math.Abs(dy) > Math.Abs(dx),
+    };
+
+    /// <summary>The centre of a computer's main screen (the one at its origin, else the first), its points.</summary>
+    static (double X, double Y) MainCentre(RoamNeighbor n)
+    {
+        var main = n.Screens.FirstOrDefault(r => r.Contains(0, 0));
+        if (main.IsEmpty) main = n.Screens[0];
+        return (Math.Round(main.X + main.W / 2), Math.Round(main.Y + main.H / 2));
+    }
+
+    void Jump(RoamSide side)
+    {
+        _userLock = false;
+        if (_target is not { } t)
+        {
+            var n = _neighbors.FirstOrDefault(x => x.Side == side && x.Screens.Count > 0);
+            if (n is null || _pixels.Count == 0) return;
+            var (vx, vy) = MainCentre(n);
+            var here = _lastPointer == default ? ParkPoint() : _lastPointer;
+            Enter(n, vx, vy, n.Side, here.X, here.Y, RoamGeometry.ScaleAt(here.X, here.Y, _displays));
+            return;
+        }
+        // Away on t: this PC sits opposite t's side; every other computer on its own side of this PC.
+        var tp = Unit(t.Side);
+        (RoamNeighbor? To, double Distance)? best = null;
+        foreach (var c in _neighbors.Where(x => !SpaceIds.Same(x.PeerId, t.PeerId) && x.Screens.Count > 0).Cast<RoamNeighbor?>().Append(null))
+        {
+            var (px, py) = c is null ? (0.0, 0.0) : Unit(c.Side);
+            var (dx, dy) = (px - tp.X, py - tp.Y);
+            if (!Toward(side, dx, dy)) continue;
+            var d = dx * dx + dy * dy;
+            if (best is null || d < best.Value.Distance) best = (c, d);
+        }
+        if (best is not { } pick) return;
+        if (pick.To is null) ComeHome(ParkPoint(), sendLeave: true);
+        else
+        {
+            var (vx, vy) = MainCentre(pick.To);
+            SwitchTarget(pick.To, vx, vy);
+        }
+    }
+
+    void SetPill(RoamPill? pill)
+    {
+        if (pill is null && _pill is null) return;
+        _pill = pill;
+        _host.Pill(pill);
+    }
+
     // ---------------- going home ----------------
 
     /// <summary>
@@ -603,6 +899,10 @@ public sealed class RoamController
         _dragAway = false;
         _dragId = null;
         _target = null;
+        _userLock = false;
+        _push.Reset();
+        _pushEdge = null;
+        if (_pill?.Kind is RoamPillKind.GameMode or RoamPillKind.Gate or RoamPillKind.Locked) SetPill(null);
         _watchdog.Disarm();
         SetProbe(null); // a drag still held carries on here, over whatever the user drops it on
         _host.Uncapture(at.X, at.Y);

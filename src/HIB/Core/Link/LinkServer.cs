@@ -260,7 +260,8 @@ public sealed class LinkServer : ILinkSession, IDisposable
                                $"Sec-WebSocket-Accept: {peerAccept}\r\n\r\n";
             try { await stream.WriteAsync(Encoding.ASCII.GetBytes(peerResponse), serverCt).ConfigureAwait(false); }
             catch { client.Dispose(); return; }
-            var peerWs = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero });
+            // SPACE.md §12.3: no per-message compression on the peer link (small frames, no deflate latency).
+            var peerWs = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero, DangerousDeflateOptions = null });
             try { await handler(peerWs, client, remote, serverCt).ConfigureAwait(false); }
             catch (Exception ex) { WriteLog("Peer session error: " + ex.Message); }
             finally { client.Dispose(); }

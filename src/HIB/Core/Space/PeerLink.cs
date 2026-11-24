@@ -50,6 +50,9 @@ public sealed class PeerLink : ILinkSession, IDisposable
     readonly PeerHello _own;
     readonly SemaphoreSlim _sendLock = new(1, 1);
     readonly CancellationTokenSource _cts = new();
+    // SPACE.md §12.3 latency: when each of our pings went out (pongs come back in order on one TCP connection).
+    readonly System.Collections.Concurrent.ConcurrentQueue<long> _pings = new();
+    TaskCompletionSource<(string Version, string Text)>? _diag;
     long _lastActivityTicks = DateTime.UtcNow.Ticks;
     int _closed;
     bool _helloDone;
@@ -110,6 +113,9 @@ public sealed class PeerLink : ILinkSession, IDisposable
     /// <summary>A <c>pong</c> came back (Roam's safety watchdog listens; SPACE.md §9.1).</summary>
     public event Action<PeerLink>? PongReceived;
 
+    /// <summary>SPACE.md §12.3: the ping round trip of this link (median of the last 20).</summary>
+    public HIB.Core.Roam.LatencyMeter Latency { get; } = new();
+
     internal event Action<PeerLink>? HelloCompleted;
     /// <summary>Decides, when the first hello arrives, whether this link is kept (false → closed 4009).</summary>
     internal Func<PeerLink, bool>? Admit;
@@ -142,6 +148,11 @@ public sealed class PeerLink : ILinkSession, IDisposable
         try
         {
             if (_ws.State != WebSocketState.Open) return false;
+            if (type == "ping")
+            {
+                while (_pings.Count > 32) _pings.TryDequeue(out _);
+                _pings.Enqueue(System.Diagnostics.Stopwatch.GetTimestamp());
+            }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(30));
             await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, timeout.Token).ConfigureAwait(false);
@@ -265,6 +276,11 @@ public sealed class PeerLink : ILinkSession, IDisposable
             case "pong":
                 if (_helloDone)
                 {
+                    if (_pings.TryDequeue(out var sentAt))
+                    {
+                        var ms = System.Diagnostics.Stopwatch.GetElapsedTime(sentAt).TotalMilliseconds;
+                        if (ms < 10_000) Latency.Add(ms);
+                    }
                     try { PongReceived?.Invoke(this); } catch { }
                 }
                 return;
@@ -277,6 +293,12 @@ public sealed class PeerLink : ILinkSession, IDisposable
             // Only here, after a valid peerHello on a link that decrypts with the space key.
             _ = Task.Run(SendDiagnosticsAsync);
             return;
+        }
+
+        if (type == "peerDiagLog")
+        {
+            // SPACE.md §12.2: the answer to our "Get log".
+            Interlocked.Exchange(ref _diag, null)?.TrySetResult((data.Str("version") ?? "", data.Str("text") ?? ""));
         }
 
         if (type == "peerActivity")
@@ -313,6 +335,25 @@ public sealed class PeerLink : ILinkSession, IDisposable
         }
         Log?.Invoke($"Peer {PeerName} asked for diagnostics; sending {Encoding.UTF8.GetByteCount(text) / 1024} KB of log");
         await SendAsync("peerDiagLog", new { version = AppVersion, text }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// SPACE.md §12.2 "Get log": asks the other computer for its log (<c>peerDiag</c>) and waits for <c>peerDiagLog</c>.
+    /// Null when the link closes, the send fails or nothing comes back in time.
+    /// </summary>
+    public async Task<(string Version, string Text)?> RequestDiagnosticsAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
+        var tcs = new TaskCompletionSource<(string Version, string Text)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Interlocked.Exchange(ref _diag, tcs)?.TrySetCanceled();
+        if (!await SendAsync("peerDiag", new { }, ct).ConfigureAwait(false))
+        {
+            Interlocked.CompareExchange(ref _diag, null, tcs);
+            return null;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+        try { return await tcs.Task.WaitAsync(timeout, linked.Token).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { return null; }
+        finally { Interlocked.CompareExchange(ref _diag, null, tcs); }
     }
 
     void Touch() => Interlocked.Exchange(ref _lastActivityTicks, DateTime.UtcNow.Ticks);

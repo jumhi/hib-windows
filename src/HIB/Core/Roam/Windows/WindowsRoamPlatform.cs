@@ -5,7 +5,10 @@
 // is parked, hidden under the hider) and the hook's would-be position minus the park point is the relative
 // motion. Injection is SendInput with scancodes (E0 → KEYEVENTF_EXTENDEDKEY) and our dwExtraInfo marker, so
 // our own events are never mistaken for the user's. No admin needed; Windows doesn't let a normal process
-// drive elevated windows or the secure desktop (lock screen, UAC).
+// drive elevated windows or the secure desktop (lock screen, UAC) — the engine's UIPI guard says so (SPACE.md §12.2).
+// Round 2 (§12.2–§12.5): the hook also reads the Roam hotkeys (Scroll Lock, Ctrl+Alt+Shift+L / arrows) in Watch and
+// Capture and eats the key that fires one; keys with no HID usage are reported (counted, never sent); relative motion
+// (ctlRel) is injected without MOUSEEVENTF_ABSOLUTE; SendInput returning 0 is logged with GetLastError (rate-limited).
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -44,6 +47,11 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
     readonly bool[] _buttonsBefore = new bool[5];
     readonly HashSet<uint> _keysDown = new();
     readonly HashSet<uint> _keepLocal = new();
+    readonly RoamHotkeyDetector _hotkeys = new();
+
+    // SendInput failures (any injecting thread): counted, logged at most every 5 s.
+    long _failures;
+    long _lastFailureLog;
 
     // Injection: the virtual desktop in pixels (set by the engine from Avalonia's screens).
     RoamRect _desktop;
@@ -63,6 +71,7 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
     public string Platform => "windows";
     public RoamInputMode Mode => (RoamInputMode)_mode;
     public event Action<RoamInput>? Input;
+    public Action<string>? Log { get; set; }
 
     /// <summary>The virtual desktop in pixels (the monitors' union), for absolute SendInput moves.</summary>
     public void SetDisplays(IReadOnlyList<RoamDisplay> displays) => _desktop = RoamGeometry.Bounds(System.Linq.Enumerable.Select(displays, d => d.Pixels));
@@ -175,6 +184,7 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
         if (_keyHook != 0) UnhookWindowsHookEx(_keyHook);
         _mouseHook = _keyHook = 0;
         _keysDown.Clear();
+        _hotkeys.Reset();
         Array.Clear(_buttons);
     }
 
@@ -366,6 +376,22 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
         EnterCaptureIfNeeded(mode);
         var down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
         var vk = info->vkCode;
+        int? usage = null;
+        var scan = (int)info->scanCode;
+        var extended = (info->flags & 0x1) != 0;
+        if (mode is RoamInputMode.Capture or RoamInputMode.Watch)
+        {
+            if (scan == 0) scan = (int)MapVirtualKeyW(vk, 4 /* MAPVK_VK_TO_VSC_EX */);
+            extended |= (scan & 0xE000) == 0xE000;
+            usage = RoamKeys.FromWindows(scan & 0x2FF, extended, (int)vk);
+            // §12.5 hotkeys on this computer's own keyboard: the key that fires one never reaches an app or the other computer.
+            if (usage is { } hu && !_keepLocal.Contains(vk))
+            {
+                var hot = _hotkeys.Feed(hu, down);
+                if (hot.Fire != RoamHotkey.None) Emit(RoamInput.Hot(hot.Fire));
+                if (hot.Swallow) return true;
+            }
+        }
         if (mode == RoamInputMode.Capture)
         {
             if (_keepLocal.Contains(vk))
@@ -378,10 +404,8 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
             }
             if (down) _keysDown.Add(vk);
             else _keysDown.Remove(vk);
-            var scan = (int)info->scanCode;
-            if (scan == 0) scan = (int)MapVirtualKeyW(vk, 4 /* MAPVK_VK_TO_VSC_EX */);
-            var usage = RoamKeys.FromWindows(scan & 0x2FF, (info->flags & 0x1) != 0 || (scan & 0xE000) == 0xE000, (int)vk);
             if (usage is { } u) Emit(RoamInput.KeyEvent(u, down));
+            else if (down && (scan & 0x200) == 0) Emit(RoamInput.Unmapped((int)vk, scan & 0xFF, extended)); // §12.2: counted, never sent
             return true;
         }
         if (down) _keysDown.Add(vk);
@@ -410,6 +434,12 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
         SendMouse(0x0001 /* MOVE */ | 0x8000 /* ABSOLUTE */ | 0x4000 /* VIRTUALDESK */, nx, ny, 0);
     }
 
+    public void InjectRelative(int dx, int dy)
+    {
+        // §12.4: no MOUSEEVENTF_ABSOLUTE, so a game reading raw input sees the motion itself.
+        if (dx != 0 || dy != 0) SendMouse(0x0001 /* MOVE */, dx, dy, 0);
+    }
+
     public void InjectButton(RoamButton button, bool down)
     {
         // Windows swaps left/right for a left-handed mouse; pre-swap so the controller's handedness wins (as Deskflow does).
@@ -432,13 +462,13 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
         if (dx != 0) SendMouse(0x1000 /* HWHEEL */, 0, 0, unchecked((uint)dx));
     }
 
-    public void InjectKey(int usage, bool down)
+    public bool InjectKey(int usage, bool down)
     {
-        if (RoamKeys.ToWindows(usage) is not { } k) return;
+        if (RoamKeys.ToWindows(usage) is not { } k) return false;
         uint flags = down ? 0u : 0x0002u; // KEYEVENTF_KEYUP
         if (k.Extended) flags |= 0x0001;  // KEYEVENTF_EXTENDEDKEY
-        if (k.ByVk) SendKey(k.Vk, k.Scan, flags);
-        else SendKey(0, k.Scan, flags | 0x0008 /* KEYEVENTF_SCANCODE: the target's own layout decides the character */);
+        if (k.ByVk) return SendKey(k.Vk, k.Scan, flags);
+        return SendKey(0, k.Scan, flags | 0x0008 /* KEYEVENTF_SCANCODE: the target's own layout decides the character */);
     }
 
     public void FinishParkedDrag(bool cancel)
@@ -449,18 +479,34 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
         SendKey(0, 0x01, 0x0008 | 0x0002);
     }
 
-    static void SendMouse(uint flags, int dx, int dy, uint data)
+    bool SendMouse(uint flags, int dx, int dy, uint data)
     {
         var input = new INPUT { type = 0 };
         input.u.mi = new MOUSEINPUT { dx = dx, dy = dy, mouseData = data, dwFlags = flags, dwExtraInfo = Marker };
-        SendInput(1, &input, sizeof(INPUT));
+        return Sent(SendInput(1, &input, sizeof(INPUT)), "mouse");
     }
 
-    static void SendKey(ushort vk, ushort scan, uint flags)
+    bool SendKey(ushort vk, ushort scan, uint flags)
     {
         var input = new INPUT { type = 1 };
         input.u.ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags, dwExtraInfo = Marker };
-        SendInput(1, &input, sizeof(INPUT));
+        return Sent(SendInput(1, &input, sizeof(INPUT)), "key");
+    }
+
+    /// <summary>§12.2: SendInput returning 0 → log GetLastError (at most every 5 s, with the count since; never what was typed).</summary>
+    bool Sent(uint inserted, string what)
+    {
+        if (inserted != 0) return true;
+        var error = Marshal.GetLastPInvokeError();
+        var n = Interlocked.Increment(ref _failures);
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref _lastFailureLog);
+        if (now - last >= 5000 && Interlocked.CompareExchange(ref _lastFailureLog, now, last) == last)
+        {
+            Interlocked.Exchange(ref _failures, 0);
+            try { Log?.Invoke($"Roam: SendInput ({what}) failed, error {error} ({n} since the last note)"); } catch { }
+        }
+        return false;
     }
 
     public void Dispose()
@@ -578,7 +624,7 @@ public sealed unsafe partial class WindowsRoamPlatform : IRoamPlatform
     [LibraryImport("user32.dll")] private static partial nint SetCursor(nint cursor);
     [LibraryImport("user32.dll")] private static partial int ShowCursor(int show);
     [LibraryImport("user32.dll")] private static partial int GetSystemMetrics(int index);
-    [LibraryImport("user32.dll")] private static partial uint SendInput(uint count, INPUT* inputs, int size);
+    [LibraryImport("user32.dll", SetLastError = true)] private static partial uint SendInput(uint count, INPUT* inputs, int size);
     [LibraryImport("user32.dll")] private static partial uint MapVirtualKeyW(uint code, uint mapType);
     [LibraryImport("user32.dll")] private static partial nint SetThreadDpiAwarenessContext(nint context);
 }
