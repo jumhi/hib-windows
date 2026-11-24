@@ -15,14 +15,23 @@ public static class FileDrag
     public static bool IsDraggingOut { get; private set; }
 
     /// <summary>Starts an OS drag of <paramref name="path"/> from <paramref name="source"/> (call from PointerPressed/Moved).</summary>
-    public static async Task<DragDropEffects> StartAsync(Control source, PointerPressedEventArgs press, string path)
+    public static Task<DragDropEffects> StartAsync(Control source, PointerPressedEventArgs press, string path)
+        => StartAsync(source, press, new[] { path });
+
+    /// <summary>Starts one OS drag carrying all of <paramref name="paths"/> (a Flick bundle's stack drags every file).</summary>
+    public static async Task<DragDropEffects> StartAsync(Control source, PointerPressedEventArgs press, IReadOnlyList<string> paths)
     {
         var top = TopLevel.GetTopLevel(source);
         if (top?.StorageProvider is not { } storage) return DragDropEffects.None;
-        var file = await storage.TryGetFileFromPathAsync(path);
-        if (file is null) return DragDropEffects.None;
         var data = new DataTransfer();
-        data.Add(DataTransferItem.CreateFile(file));
+        var any = false;
+        foreach (var path in paths)
+        {
+            if (await storage.TryGetFileFromPathAsync(path) is not { } file) continue;
+            data.Add(DataTransferItem.CreateFile(file));
+            any = true;
+        }
+        if (!any) return DragDropEffects.None;
         IsDraggingOut = true;
         try { return await DragDrop.DoDragDropAsync(press, data, DragDropEffects.Copy); }
         finally { IsDraggingOut = false; }

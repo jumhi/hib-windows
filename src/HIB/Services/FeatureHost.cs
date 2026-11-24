@@ -120,7 +120,8 @@ public sealed class FeatureHost : IDisposable
     const string AdbAutoKey = "hib.win.adbAutoConnect";
     readonly HibCore _core;
     readonly AppController _app;
-    readonly DispatcherTimer _guardian;
+    string? _lastDevicePorts;
+    int? _lastConnectPort;
     CancellationTokenSource? _alarm;
 
     public FeatureHost(HibCore core, AppController app)
@@ -158,10 +159,28 @@ public sealed class FeatureHost : IDisposable
         // "Play here" (SPACE.md §3.5) drives the same scrcpy audio bridge.
         core.SpaceEngine.AttachAudio(new PhoneAudioPlayer(Audio));
 
-        // ADB follows the link: connect on every device message, disconnect when the phone drops.
+        // SPACE.md §13: ADB that stays connected — the keeper tries at link-up, when the phone's connectPort changes,
+        // after a network change and every 10 s → 60 s while down; quietly (no toasts on retries).
+        Keeper = new AdbKeeper(Adb, new AdbKeeperContext
+        {
+            Enabled = () => AdbAutoConnect,
+            LinkUp = () => core.Link.IsConnected,
+            PhoneIp = () => PhoneIp,
+            PhoneKey = () => core.Link.Device is { } d ? (d.Id is { Length: > 0 } id ? id : d.Name) : null,
+            Setup = () => core.Hub.AdbSetup,
+            DevicePorts = () => core.Link.Device?.AdbPorts ?? Array.Empty<string>(),
+            // The "Set up mirroring" card drives its own connects (and pairing) while it is open.
+            Paused = () => Pairing.IsBusy || (Setup?.IsOpen ?? false),
+            AskForPorts = () => core.Link.SendAsync("refreshAdbPorts"),
+        }, Settings);
+        // The device message: a new address or other adbPorts (an older phone app, or the answer to refreshAdbPorts).
         core.Link.MessageReceived += (_, e) =>
         {
-            if (e.Type == "device") _ = AutoConnectAdbAsync(silent: true);
+            if (e.Type != "device" || core.Link.Device is not { } d) return;
+            var seen = PhoneAdbIp(d) + "|" + string.Join(",", d.AdbPorts);
+            if (seen == _lastDevicePorts) return;
+            _lastDevicePorts = seen;
+            _ = Keeper.TriggerAsync(AdbKeeperTrigger.Ports);
         };
         // SPACE.md §8: the phone reports its own ADB setup (ports, pairing service). Pairing and the setup card use it.
         core.Link.DeviceUpdated += (_, d) => Pairing.PhoneIp = PhoneAdbIp(d);
@@ -170,15 +189,30 @@ public sealed class FeatureHost : IDisposable
         {
             if (core.Link.Device is { } dev) Pairing.PhoneIp = PhoneAdbIp(dev);
             Pairing.UpdateSetupState(state);
-            // Wireless debugging just came on (or moved): connect quietly, like after a device message.
-            if (state is { WirelessDebugging: true, ConnectPort: not null } && !Adb.IsConnected && !Adb.IsConnecting && !Pairing.IsBusy)
-                _ = AutoConnectAdbAsync(silent: true);
+            // Wireless debugging came on, or its port moved: the keeper connects (or re-checks) at once.
+            var key = state is { WirelessDebugging: true } ? state.ConnectPort : null;
+            if (state is not null && key != _lastConnectPort)
+            {
+                _lastConnectPort = key;
+                if (key is not null) _ = Keeper.TriggerAsync(AdbKeeperTrigger.ConnectPort);
+            }
         };
         core.Link.ConnectionChanged += (_, connected) =>
         {
-            if (!connected && Adb.IsConnected) _ = Adb.DisconnectAsync();
-            if (connected) _ = Scenes.PublishScenesAsync(Array.Empty<PhoneSceneInfo>());
+            if (!connected)
+            {
+                _lastDevicePorts = null;
+                _lastConnectPort = null;
+                if (Adb.IsConnected) _ = Adb.DisconnectAsync();
+            }
+            else
+            {
+                _ = Keeper.TriggerAsync(AdbKeeperTrigger.LinkUp);
+                _ = Scenes.PublishScenesAsync(Array.Empty<PhoneSceneInfo>());
+            }
         };
+        Keeper.WatchNetwork();
+        Keeper.Start();
 
         // The "Set up mirroring" card (SPACE.md §8.3).
         Setup = new AdbSetupPresenter(app, this);
@@ -213,22 +247,13 @@ public sealed class FeatureHost : IDisposable
         });
         Scenes.RunSceneRequested += id => _ = Scenes.ReportSceneResultAsync(id, false, "Scenes aren't available on Windows yet");
         FindMy.DesktopRingRequested += ring => Ui.Post(() => RingThisPc(ring));
-
-        // Guardian (PROTOCOL §7.1): ADB wanted but down → ask for fresh ports, then retry quietly.
-        _guardian = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _guardian.Tick += async (_, _) =>
-        {
-            if (!AdbAutoConnect || !core.Link.IsConnected || Adb.IsConnected || Adb.IsConnecting || Adb.UserRequestedDisconnect || Adb.AdbPath is null) return;
-            await core.Link.SendAsync("refreshAdbPorts");
-            await Task.Delay(1500);
-            await AutoConnectAdbAsync(silent: true);
-        };
-        _guardian.Start();
     }
 
     public ISettingsStore Settings { get; }
     public SessionPhoneLink Link { get; }
     public AdbService Adb { get; }
+    /// <summary>Keeps ADB connected while the phone is linked (SPACE.md §13); <see cref="AdbKeeper.Status"/> is the quiet line.</summary>
+    public AdbKeeper Keeper { get; }
     public AdbPairingService Pairing { get; }
     public AppOpsGranter AppOps { get; }
     public MirrorService Mirror { get; }
@@ -256,26 +281,22 @@ public sealed class FeatureHost : IDisposable
 
     public string DeviceNameForWindows => _core.Link.Device?.Name ?? _core.Settings.LastPhoneName ?? "Phone";
 
-    /// <summary>Connects ADB to the current phone using the ports it reported.</summary>
+    /// <summary>
+    /// Connects ADB to the current phone: the phone's own <c>connectPort</c> first, then the ports that worked before
+    /// (SPACE.md §13), restarting the adb server once when adb can't reach a phone that answers on the app link.
+    /// <paramref name="silent"/> only nudges the keeper (it connects quietly and never toasts).
+    /// </summary>
     /// <param name="notify">Show the "Couldn't connect" toast on failure (default: when not silent).</param>
     public async Task<AdbConnectResult?> AutoConnectAdbAsync(bool silent, bool killServer = false, bool? notify = null)
     {
-        var d = _core.Link.Device;
-        if (d is null || !Adb.HasAdb) return null;
-        if (silent && (!AdbAutoConnect || Adb.IsConnected || Adb.UserRequestedDisconnect)) return null;
-        var ip = PhoneAdbIp(d);
-        // SPACE.md §8: the phone's own connectPort beats the device message's adbPorts; and when the phone
-        // reports its setup, never fall back to mDNS (it can't cross subnets).
-        var setup = _core.Hub.AdbSetup;
-        var ports = AdbSetupFlow.PortsToTry(setup, d.AdbPorts);
-        if (setup is not null && ports.Count == 0)
+        if (_core.Link.Device is null || !Adb.HasAdb) return null;
+        if (silent)
         {
-            var why = !setup.DeveloperOptions ? "Developer options are off on the phone."
-                : !setup.WirelessDebugging ? "Wireless debugging is off on the phone."
-                : "The phone hasn't reported its Wireless debugging port yet.";
-            return new AdbConnectResult(false, null, why, why, why);
+            await Keeper.TriggerAsync(AdbKeeperTrigger.Ports);
+            return null;
         }
-        return await Adb.ConnectAsync(ip, ports, killServer, silent, notify: notify);
+        if (killServer) await Adb.RestartServerAsync();
+        return await Keeper.ConnectNowAsync(notify ?? true);
     }
 
     /// <summary>The phone's address for adb, when a phone is known.</summary>
@@ -323,7 +344,7 @@ public sealed class FeatureHost : IDisposable
 
     public void Dispose()
     {
-        _guardian.Stop();
+        Keeper.Dispose();
         _alarm?.Cancel();
         try { Mirror.StopAll(); } catch { }
         try { Audio.Dispose(); } catch { }

@@ -47,6 +47,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             f.Ring.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(f.Ring.IsRinging)) Ui.Post(() => IsRinging = f.Ring.IsRinging); };
             f.Adb.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
+            f.Keeper.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
             f.Audio.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
             f.Mirror.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
             f.Launcher.PropertyChanged += (_, _) => Ui.Post(RefreshFeatures);
@@ -207,7 +208,10 @@ public partial class HomeViewModel : ViewModelBase
         IsAdbWired = f.Adb.Mode == AdbConnectionMode.Wired;
         IsAudioHere = f.Audio.IsActive;
         IsMirroring = f.Mirror.IsMirroring;
-        AdbText = f.Adb.IsConnecting ? "Connecting ADB…" : f.Adb.IsConnected ? $"ADB connected ({(IsAdbWired ? "USB" : "Wi-Fi")})" : "ADB isn't connected";
+        // SPACE.md §13: the keeper's quiet line ("ADB · connected" / "ADB · reconnecting…").
+        AdbText = f.Adb.IsConnected ? $"ADB · connected ({(IsAdbWired ? "USB" : "Wi-Fi")})"
+            : f.Keeper.State == HIB.Features.Adb.AdbKeeperState.Reconnecting ? f.Keeper.Status
+            : f.Adb.IsConnecting ? "Connecting ADB…" : "ADB isn't connected";
         var starting = f.Launcher.StartingKind;
         MirrorLabel = starting is MirrorKind.Mirror or MirrorKind.App ? "Starting…" : "Mirror";
         DesktopLabel = starting is MirrorKind.Desktop ? "Starting…" : "Desktop";

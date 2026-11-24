@@ -16,6 +16,8 @@ public struct FlickBody
     public double TargetX, TargetY, TargetRot;
     public double Scale;
     public double ScaleVel;
+    /// <summary>The size the spring settles at; 0 means full size (a fanned bundle's cards may be smaller).</summary>
+    public double TargetScale;
     public double Alpha;
     public FlickBodyMode Mode;
 
@@ -94,16 +96,17 @@ public struct FlickBody
                 var ra = -RotStiffness * (Rot - TargetRot) - RotDamping * RotVel + ax * 0.0025;
                 RotVel += ra * dt;
                 Rot += RotVel * dt;
-                var sa = -220 * (Scale - 1) - 2 * 0.5 * Math.Sqrt(220) * ScaleVel;
+                var ts = TargetScale > 0 ? TargetScale : 1;
+                var sa = -220 * (Scale - ts) - 2 * 0.5 * Math.Sqrt(220) * ScaleVel;
                 ScaleVel += sa * dt;
                 Scale += ScaleVel * dt;
                 var settled = Math.Abs(X - TargetX) < 0.6 && Math.Abs(Y - TargetY) < 0.6
                               && Math.Sqrt(Vx * Vx + Vy * Vy) < 9
                               && Math.Abs(Rot - TargetRot) < 0.25 && Math.Abs(RotVel) < 2
-                              && Math.Abs(Scale - 1) < 0.004;
+                              && Math.Abs(Scale - ts) < 0.004;
                 if (settled)
                 {
-                    X = TargetX; Y = TargetY; Vx = Vy = 0; Rot = TargetRot; RotVel = 0; Scale = 1; ScaleVel = 0;
+                    X = TargetX; Y = TargetY; Vx = Vy = 0; Rot = TargetRot; RotVel = 0; Scale = ts; ScaleVel = 0;
                     Mode = FlickBodyMode.Landed;
                     return false;
                 }
@@ -115,7 +118,7 @@ public struct FlickBody
                 var e = DismissT * DismissT * DismissT; // ease-in cubic
                 X = DismissFromX + (DismissToX - DismissFromX) * e;
                 Y = DismissFromY + (DismissToY - DismissFromY) * e;
-                Scale = 1 - 0.82 * e;
+                Scale = (TargetScale > 0 ? TargetScale : 1) * (1 - 0.82 * e);
                 Alpha = 1 - DismissT * DismissT;
                 return DismissT < 1;
             }

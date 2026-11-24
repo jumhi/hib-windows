@@ -254,42 +254,43 @@ public sealed class AppController
     // ---------------- send to phone / other computers ----------------
 
     /// <summary>
-    /// Sends files to the phone (target "phone") or, through the phone, to another computer. Shows a
-    /// progress toast per file and a result toast. Returns how many arrived.
+    /// Sends files to the phone (target "phone") or another computer, all at once: several files go as one bundle
+    /// (SPACE.md §14 — one stack on a computer, one notification on the phone). One progress toast, then one result
+    /// toast. Returns how many arrived.
     /// </summary>
     public async Task<int> SendFilesAsync(System.Collections.Generic.IEnumerable<string> paths, SendTarget target)
     {
-        var ok = 0;
-        foreach (var path in paths)
+        var all = paths.ToList();
+        foreach (var folder in all.Where(Directory.Exists))
+            Ui.Post(() => Toasts.Show(new ToastViewModel { Caption = "Send to " + target.Name, Title = "Folders can't be sent", Body = Path.GetFileName(folder), Icon = ImageUtil.AppIcon() }));
+        var files = all.Where(p => !Directory.Exists(p)).ToList();
+        if (files.Count == 0) return 0;
+        var what = files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} files";
+        var key = "send:" + Guid.NewGuid().ToString("N");
+        var total = files.Where(File.Exists).Sum(f => new FileInfo(f).Length);
+        Ui.Post(() => Toasts.Show(new ToastViewModel
         {
-            if (Directory.Exists(path))
+            Key = key, Caption = "Send to " + target.Name, Title = "Sending " + what, Persistent = true,
+            Body = total > 0 ? FormatSize(total) : "", Icon = ImageUtil.AppIcon(),
+        }));
+        // Direct link, through the phone, or the phone itself (with Flick previews): SpaceDirectory routes it.
+        System.Collections.Generic.IReadOnlyList<SendResult> results;
+        try { results = await Core.Space.SendFilesAsync(target.Id, files).ConfigureAwait(false); }
+        catch (Exception ex) { results = files.Select(f => new SendResult("", Path.GetFileName(f), false, ex.Message)).ToList(); }
+        var ok = results.Count(r => r.Ok);
+        var failed = results.FirstOrDefault(r => !r.Ok);
+        Ui.Post(() =>
+        {
+            Toasts.Close(key);
+            Toasts.Show(new ToastViewModel
             {
-                Ui.Post(() => Toasts.Show(new ToastViewModel { Caption = "Send to " + target.Name, Title = "Folders can't be sent", Body = Path.GetFileName(path), Icon = ImageUtil.AppIcon() }));
-                continue;
-            }
-            var name = Path.GetFileName(path);
-            var key = "send:" + path;
-            Ui.Post(() => Toasts.Show(new ToastViewModel
-            {
-                Key = key, Caption = "Send to " + target.Name, Title = "Sending " + name, Persistent = true,
-                Body = File.Exists(path) ? FormatSize(new FileInfo(path).Length) : "", Icon = ImageUtil.AppIcon(),
-            }));
-            // Direct link, through the phone, or the phone itself (with a Flick preview): SpaceDirectory routes it.
-            var r = (await Core.Space.SendFilesAsync(target.Id, new[] { path }).ConfigureAwait(false))[0];
-            Ui.Post(() =>
-            {
-                Toasts.Close(key);
-                Toasts.Show(new ToastViewModel
-                {
-                    Caption = "Send to " + target.Name,
-                    Title = r.Ok ? "Sent " + name : "Couldn't send " + name,
-                    Body = r.Ok ? (target.IsPhone ? "Saved in Downloads/H.I.B on the phone" : $"It landed on {target.Name}") : r.Error ?? "",
-                    Icon = ImageUtil.AppIcon(),
-                    Seconds = r.Ok ? 5 : 8,
-                });
+                Caption = "Send to " + target.Name,
+                Title = ok == files.Count ? "Sent " + what : ok == 0 ? "Couldn't send " + what : $"Sent {ok} of {files.Count} files",
+                Body = failed is not null ? failed.Error ?? "" : target.IsPhone ? "Saved in Downloads/H.I.B on the phone" : $"It landed on {target.Name}",
+                Icon = ImageUtil.AppIcon(),
+                Seconds = failed is null ? 5 : 8,
             });
-            if (r.Ok) ok++;
-        }
+        });
         return ok;
     }
 

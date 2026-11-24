@@ -610,4 +610,85 @@ public class SpaceTests
         Assert.False(space.IsPlayingHere);
         Assert.True(space.Find("Haitham’s MacBook")!.IsPlayingAudio);
     }
+
+    // ---------------- Flick bundles (SPACE.md §14) ----------------
+
+    [Fact]
+    public async Task Several_files_to_the_phone_go_as_one_bundle_thrown_before_any_file()
+    {
+        await using var host = new TestHost(name: "Office PC", space: FastSpace());
+        await using var phone = await host.ConnectPhoneAsync();
+        var files = new[] { MakePng(host.Root, "a.png", 320, 200), MakePng(host.Root, "b.png", 320, 200), MakePng(host.Root, "c.png", 320, 200) };
+
+        var send = host.Core.Space.SendFilesAsync("phone", files);
+        var starts = new List<DesktopMessage>();
+        for (var i = 0; i < 3; i++) starts.Add(await phone.WaitForAsync("flickStart", match: m => starts.All(s => s.Data.Str("id") != m.Data.Str("id"))));
+        var bundles = starts.Select(m => m.Data.Obj("bundle")!.Value).ToList();
+        Assert.Single(bundles.Select(b => b.Str("id")).Distinct());
+        Assert.Equal(new long?[] { 0, 1, 2 }, bundles.Select(b => b.Long("index")).ToArray());
+        Assert.All(bundles, b => Assert.Equal(3, b.Long("count")));
+        Assert.Equal(new[] { "a.png", "b.png", "c.png" }, starts.Select(m => m.Data.Str("name")).ToArray());
+        Assert.All(starts, m => Assert.NotNull(m.Data.Str("thumbnail")));
+        // One throw: every flickStart goes before the first file.
+        var history = phone.History.Select(m => m.Type).ToList();
+        Assert.True(history.LastIndexOf("flickStart") < history.IndexOf("fileTransferInit") || !history.Contains("fileTransferInit"));
+
+        // Then the files, each with its own flick id.
+        for (var n = 0; n < 3; n++)
+        {
+            var init = await phone.WaitForAsync("fileTransferInit");
+            Assert.Equal(starts[n].Data.Str("id"), init.Data.Str("flickId"));
+            var id = init.Data.Str("id")!;
+            var size = init.Data.Long("size")!.Value;
+            for (var i = 0; i * 65536L < size; i++)
+            {
+                var c = await phone.WaitForAsync("fileChunk");
+                await phone.SendAsync("fileChunkAck", new { id, index = c.Data.Int("index") });
+            }
+            await phone.WaitForAsync("fileTransferComplete");
+            await phone.SendAsync("transferVerified", new { id, verified = true });
+        }
+        Assert.All(await send, r => Assert.True(r.Ok, r.Error));
+
+        // A single file is still a plain flick.
+        var one = host.Core.Space.SendFilesAsync("phone", new[] { files[0] });
+        var single = await phone.WaitForAsync("flickStart", match: m => starts.All(s => s.Data.Str("id") != m.Data.Str("id")));
+        Assert.Null(single.Data.Obj("bundle"));
+        var last = await phone.WaitForAsync("fileTransferInit");
+        var lid = last.Data.Str("id")!;
+        await phone.SendAsync("fileChunkAck", new { id = lid, index = (await phone.WaitForAsync("fileChunk")).Data.Int("index") });
+        await phone.WaitForAsync("fileTransferComplete");
+        await phone.SendAsync("transferVerified", new { id = lid, verified = true });
+        Assert.True((await one).Single().Ok);
+    }
+
+    [Fact]
+    public async Task Several_files_to_a_computer_arrive_as_one_bundle()
+    {
+        var (a, b) = await TwoLinkedComputersAsync();
+        await using var _a = a;
+        await using var _b = b;
+        var flicks = new List<FlickInfo>();
+        var received = new List<ReceivedFile>();
+        b.Core.Space.FlickArrived += f => { lock (flicks) flicks.Add(f); };
+        b.Core.Files.Received += f => { lock (received) received.Add(f); };
+
+        var files = Enumerable.Range(0, 4).Select(i => MakePng(a.Root, $"shot {i}.png", 400, 300)).ToList();
+        files.Add(Path.Combine(a.Root, "missing.png")); // not sent, not counted
+        var results = await a.Core.Space.SendFilesAsync("B Mac", files);
+        Assert.Equal(5, results.Count);
+        Assert.All(results.Take(4), r => Assert.True(r.Ok, r.Error));
+        Assert.False(results[4].Ok);
+        Assert.True(await Eventually.TrueAsync(() => { lock (received) return received.Count == 4; }));
+        lock (flicks)
+        {
+            Assert.Equal(4, flicks.Count);
+            var tags = flicks.Select(f => f.Bundle!).ToList();
+            Assert.Single(tags.Select(t => t.Id).Distinct());
+            Assert.Equal(new[] { 0, 1, 2, 3 }, tags.Select(t => t.Index).OrderBy(i => i).ToArray());
+            Assert.All(tags, t => Assert.Equal(4, t.Count));
+            Assert.All(flicks, f => Assert.Equal("A PC", f.From));
+        }
+        lock (received) Assert.All(received, r => Assert.Contains(flicks, f => f.Id == r.FlickId));
+    }
 }

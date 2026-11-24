@@ -145,6 +145,29 @@ public sealed record FlickInfo(string Id, string Kind, string Name, string? Mime
     public string? From { get; init; }
     /// <summary>Roam file drag (SPACE.md §9.5): the drop point in this computer's points/DIPs; the card appears there.</summary>
     public (double X, double Y)? At { get; init; }
+    /// <summary>Part of a bundle (SPACE.md §14): every item of one throw shares the bundle id and lands as one stack.</summary>
+    public FlickBundleTag? Bundle { get; init; }
+}
+
+/// <summary>
+/// <c>flickStart.bundle {id, index, count}</c> (SPACE.md §14): many items thrown at once. Every item carries the same
+/// <see cref="Id"/> and <see cref="Count"/>; <see cref="Index"/> is its place (0 = the top of the stack).
+/// </summary>
+public sealed record FlickBundleTag(string Id, int Index, int Count)
+{
+    /// <summary>Reads <c>bundle</c> from a flickStart; null when absent, malformed, or a "bundle" of one.</summary>
+    public static FlickBundleTag? Parse(System.Text.Json.JsonElement flickStart)
+    {
+        if (flickStart.ValueKind != System.Text.Json.JsonValueKind.Object || flickStart.Obj("bundle") is not { } b) return null;
+        var id = b.Str("id");
+        var index = b.Int("index");
+        var count = b.Int("count");
+        if (string.IsNullOrWhiteSpace(id) || index is not { } i || count is not { } n || n < 2 || i < 0 || i >= n) return null;
+        return new FlickBundleTag(id, i, Math.Min(n, 1000));
+    }
+
+    /// <summary>The wire form: <c>{"id":…,"index":…,"count":…}</c>.</summary>
+    public object ToWire() => new Dictionary<string, object?> { ["id"] = Id, ["index"] = Index, ["count"] = Count };
 }
 
 public sealed record ReceivedFile(string Id, string Name, string Path, long Size, string? FlickId, bool IsSearchFetch, DateTimeOffset Received)
