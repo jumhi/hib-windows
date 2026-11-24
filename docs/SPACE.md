@@ -663,3 +663,96 @@ Whatever the phone points at receives what the phone does — not only Flick.
   keycodes) are Ctrl, `option`/`alt` is Alt; macOS keycodes are translated to physical keys, so the PC's own
   layout applies; `macMediaControl` play/pause/playPause all toggle (Windows has one play/pause key) and
   answer `macMediaControlResponse`.
+
+## 12. Roam, round 2 (what real use showed)
+
+### 12.1 The cursor must be visible on a computer with no mouse of its own (Windows)
+Windows hides the pointer when no mouse is attached (`GetSystemMetrics(SM_MOUSEPRESENT) == 0`), so a PC driven
+from the Mac showed no cursor. While a Windows computer is **controlled** and has no mouse, turn on Mouse Keys
+(`SPI_SETMOUSEKEYS` with `MKF_AVAILABLE | MKF_MOUSEKEYSON | MKF_REPLACENUMBERS`, as Deskflow's
+MSWindowsComputer does) and restore the user's previous Mouse Keys setting on release, on exit and — if H.I.B
+crashed while it was on — at the next start. Re-check `SM_MOUSEPRESENT` on `WM_DEVICECHANGE`.
+
+### 12.2 Keys must reach the target, or say why
+- Target (Windows): before injecting, check the foreground window's process. If it is elevated (admin) and
+  H.I.B isn't, Windows (UIPI) silently drops our input: show the pill "The app in front runs as administrator
+  — H.I.B can't type into it" once per app, and log it. `SendInput` returning 0 → log `GetLastError()`.
+- Both sides log the key path without contents: per 10 s, counts of keys captured / sent / received / injected /
+  unmapped, plus every unmapped key code. Never log characters.
+- **Get a computer's log from the Mac:** the Devices row for a linked PC gets "Get log" (also in the menu-bar
+  menu ▸ Diagnostics): send `peerDiag` (§3.3) over the existing peer link, save `peerDiagLog.text` to
+  `~/Library/Logs/H.I.B/<computer name>.log` and reveal it in Finder. Windows offers the same for the Mac
+  (the Mac answers `peerDiag` with the tail of its own log, `~/Library/Logs/H.I.B/H.I.B.log`, scrubbed — the Mac
+  app writes that rolling log, ≤ 2 MB, Roam/peer/ADB lines only).
+
+### 12.3 Smoother
+- Controller: send `ctlMove` immediately when nothing is in flight; while a frame is still being written, keep
+  only the newest position and send it the moment the socket is free. No fixed 8 ms timer.
+- Target: apply input on a dedicated high-priority input thread — never the UI thread, never through a
+  dispatcher queue, no per-move logging or allocation.
+- Both: `TCP_NODELAY` (have), WebSocket compression off for the peer link, frames small.
+- Show the live link latency (peer ping RTT, median of the last 20) in the Devices row: "Latency 3 ms". Above
+  25 ms show the tip "Wi-Fi is adding delay — 5 GHz or a cable to one computer helps".
+- Scrolling: accumulate fractional wheel deltas and send them as they come (Windows accepts sub-notch deltas;
+  the Mac posts pixel scroll events), so trackpad scrolling is smooth, not stepped.
+
+### 12.4 Games and full-screen apps (game mode)
+The controller keeps a virtual cursor for the target; a game that locks the real cursor at the centre let that
+virtual cursor drift to the edge and the mouse fell back to the Mac mid-game.
+- Each computer watches its own foreground app and reports its state to every linked computer:
+  `{"type":"ctlTargetState","data":{"mode":"normal|fullscreen|locked","app":"VALORANT-Win64-Shipping.exe"}}`
+  (on change). Windows: `fullscreen` = the foreground window covers its whole monitor; `locked` = fullscreen
+  and the cursor is hidden (`GetCursorInfo` flags 0) or clipped (`GetClipCursor` smaller than that monitor).
+  Mac: `fullscreen` = the frontmost app has a full-screen window on that display; `locked` = also the cursor is
+  hidden/disassociated. Exclude H.I.B's own windows.
+- Controlling a `locked` target: send **relative** moves `{"type":"ctlRel","data":{"dx":3,"dy":-1}}` (the
+  target injects them without MOUSEEVENTF_ABSOLUTE so games see raw motion), the virtual cursor is frozen and
+  the mouse **never** leaves by an edge. Leave with the lock hotkey (§12.5) or when the game shows its cursor
+  again (state goes back to `fullscreen`/`normal`).
+- `fullscreen` (on either side, also when the PC is driving itself while a game runs on it): edges are closed
+  except the **gate** — the top 15 % (at least 60 px) of each shared edge — and crossing there needs a double
+  push (two pushes within 500 ms, Deskflow's switch double-tap). First push shows a small pill at the gate:
+  "Game running — push again here to leave".
+- A pill on entering game mode on the controlling side: "Game mode · the mouse stays on <name> · ⌃⌥⌘L to leave"
+  (Windows keyboard: "Scroll Lock or Ctrl+Alt+Shift+L"). Settings: "Game mode: automatic (default) / off".
+
+### 12.5 Deskflow features we were missing
+- **Lock to this computer:** ⌃⌥⌘L on a Mac keyboard; Scroll Lock or Ctrl+Alt+Shift+L on a PC keyboard (hotkeys are
+  read on the controller's own keyboard). Toggles; a pill shows "Locked to <name>".
+- **Jump hotkeys:** ⌃⌥⌘← / → / ↑ / ↓ (Mac) and Ctrl+Alt+Shift+arrows (PC) jump the cursor to the computer on that
+  side (centre of its main screen).
+- **Lock together** (default on): locking one computer's screen locks the other linked computers
+  (`{"type":"ctlScreenLock","data":{}}`); unlocking does not unlock others.
+- **Keep the target awake:** while controlled, the target holds an idle-sleep/display-sleep assertion.
+- **Pointer speed per computer** (Devices row slider, 0.5×–2×, default 1×) applied by the controller to deltas
+  sent to that target; **scroll speed** and **natural scrolling** per target likewise.
+- **Clipboard images** on crossing (PNG ≤ 8 MB) in addition to text (§9.4): `clipboard:{"text":…}` or
+  `{"png":"<base64>"}`.
+- **Key repeat:** forward the controller's auto-repeat key-downs; the target injects each (Windows doesn't
+  auto-repeat injected keys on its own).
+
+## 13. ADB that stays connected (Mac and Windows)
+Whenever the phone link is up and this computer has ever had ADB working with this phone (or the phone's
+`adbSetupState` says Wireless debugging is on), keep ADB connected without any button:
+- try at link-up, whenever `adbSetupState.connectPort` changes, right after a network change, and every 10 s
+  while disconnected (backoff to 60 s; reset on any of the triggers);
+- use the phone's reported `connectPort` first, then remembered ports;
+- if connecting fails with "No route to host" / refused while the phone answers on the app link, restart the
+  adb server **from H.I.B** once (so it runs under H.I.B's own Local Network permission on macOS), then retry;
+- show the state quietly ("ADB · connected" / "reconnecting…") and never toast on retries. The
+  "Connect ADB" button stays as a manual nudge only.
+
+## 14. Flick bundles (many at once)
+- The phone throws every selected item in **one** throw. Each `flickStart` carries
+  `"bundle":{"id":"…","index":0,"count":5}` (same `id`, `screen`, `at`, `exitXRatio`, `velocity` for all).
+- **Computer:** a bundle lands as one stacked card (the first item on top, the next 2–3 peeking out with small
+  rotations, a count badge "5"), with the usual landing spring. Click the stack → it **fans out** into a pattern
+  centred on where it landed, with staggered springs:
+  2 = side by side · 3 = two on top, one centred below · 4 = 2×2 · 5 = dice-five (2 top, 1 middle, 2 bottom) ·
+  6 = 3×2 · 7 = 2-3-2 · 8 = 3-2-3 · 9 = 3×3 · 10+ = a grid with a "+N" card that opens the folder.
+  Fanned cards work like single cards (click opens, drag out). A small "Gather" control (or Esc, or clicking
+  empty space) stacks them again; dragging the **stack** drags all files at once.
+- Files of a bundle are saved together under Downloads (as today) and the card shows progress for the whole
+  bundle until all arrived.
+- **Computer → phone:** a bundle arrives as one notification "5 photos from <name>" with a preview strip; tapping
+  opens a viewer with all of them (Open / Share / Save all).
