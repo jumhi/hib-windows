@@ -339,6 +339,7 @@ public sealed partial class RoamEngine : IDisposable
     /// <summary>Recomputes the neighbours and the platform mode (under the lock).</summary>
     void Recompute()
     {
+        _controller.LocalName = Own;
         RebuildRoom();
         var neighbors = new List<RoamNeighbor>();
         var inRoom = new List<string>();

@@ -4,6 +4,7 @@
 //  - RoamNoticeWindow: "PC-INTERN is on this side now · Undo" when a moved computer was learned.
 //  - RoamDropCatcherWindow: an invisible drop target under the cursor at the edge; it tells whether a file drag
 //    is on, and the local drag stays parked on it while the files go across.
+//  - RoamPillWindow (SPACE.md §12): game mode, the gate, "Locked to …" and the admin-app warning.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -459,5 +460,136 @@ public sealed class RoamDropCatcherWindow : Window
             RoamSide.Above => new PixelPoint(along - px / 2, (int)s.Y),
             _ => new PixelPoint(along - px / 2, (int)(s.Bottom - px)),
         };
+    }
+}
+
+/// <summary>
+/// SPACE.md §12 pills: a short click-through capsule that never activates — "Game running — push again here to leave" at the
+/// gate, "Game mode · the mouse stays on …", "Locked to …", and "The app in front runs as administrator — …". Beside the edge
+/// it is about (gate, game mode), else at the bottom of the screen above the taskbar. It fades by itself.
+/// </summary>
+public sealed class RoamPillWindow : Window
+{
+    readonly DispatcherTimer _timer;
+
+    public RoamPillWindow(RoamPill pill)
+    {
+        Pill = pill;
+        SizeToContent = SizeToContent.WidthAndHeight;
+        CanResize = false;
+        WindowDecorations = WindowDecorations.None;
+        Topmost = true;
+        ShowInTaskbar = false;
+        ShowActivated = false;
+        Focusable = false;
+        Background = Brushes.Transparent;
+        TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent };
+        TransparencyBackgroundFallback = Brushes.Transparent;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Title = "Roam";
+        Icon = ImageUtil.WindowIcon();
+        Content = Capsule(pill);
+        ClickThrough.Apply(this);
+        Opened += (_, _) => ClickThrough.AfterOpen(this);
+        _timer = new DispatcherTimer { Interval = LifetimeOf(pill.Kind) };
+        _timer.Tick += (_, _) =>
+        {
+            _timer.Stop();
+            Close();
+        };
+        Opened += (_, _) => _timer.Start();
+        Closed += (_, _) => _timer.Stop();
+    }
+
+    public RoamPill Pill { get; }
+    public string Text => Pill.Text;
+
+    /// <summary>The capsule's size (DIPs, with its margin) before the window is laid out.</summary>
+    public Size MeasuredSize()
+    {
+        if (Content is not Control c) return default;
+        c.Measure(Size.Infinity);
+        return c.DesiredSize;
+    }
+
+    public static TimeSpan LifetimeOf(RoamPillKind kind) => kind switch
+    {
+        RoamPillKind.Gate => TimeSpan.FromSeconds(1.6),
+        RoamPillKind.GameMode => TimeSpan.FromSeconds(5),
+        RoamPillKind.AdminApp => TimeSpan.FromSeconds(6),
+        _ => TimeSpan.FromSeconds(2.5),
+    };
+
+    /// <summary>The pill itself: an ink capsule with an icon, edged in the colour of what it says.</summary>
+    public static Border Capsule(RoamPill pill)
+    {
+        var (accent, icon) = pill.Kind switch
+        {
+            RoamPillKind.AdminApp => (Color.FromRgb(0xFF, 0xC1, 0x4D), HIB.ViewModels.Icons.ShieldCheck),
+            RoamPillKind.Locked => (FlickTheme.Lime, HIB.ViewModels.Icons.Lock),
+            RoamPillKind.Unlocked => (FlickTheme.Cyan, HIB.ViewModels.Icons.ArrowRightLeft),
+            RoamPillKind.Gate => (FlickTheme.Cyan, HIB.ViewModels.Icons.ChevronUp),
+            _ => (FlickTheme.Lime, HIB.ViewModels.Icons.Mouse),
+        };
+        return new Border
+        {
+            Margin = new Thickness(16),
+            MinHeight = 38,
+            MaxWidth = 560,
+            CornerRadius = new CornerRadius(19),
+            Background = FlickTheme.Solid(FlickTheme.Ink, 0.92),
+            BorderBrush = FlickTheme.Solid(accent, 0.65),
+            BorderThickness = new Thickness(1),
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 24, Color = FlickTheme.A(accent, 0.38) },
+                new[] { new BoxShadow { OffsetY = 3, Blur = 12, Color = FlickTheme.A(Colors.Black, 0.35) } }),
+            Padding = new Thickness(14, 8, 16, 8),
+            IsHitTestVisible = false,
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 9,
+                Children =
+                {
+                    new HIB.Views.Controls.Icon { Data = icon, Size = 14, StrokeThickness = 2.2, Foreground = FlickTheme.Solid(accent), VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock
+                    {
+                        Text = pill.Text,
+                        FontSize = 13,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxWidth = 500,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Where the pill goes (pixels) for a window of <paramref name="width"/>×<paramref name="height"/> pixels: beside a left/right edge
+    /// at the hint (the gate's middle for the gate pill), else centred at the bottom of that screen, 64 points up.
+    /// </summary>
+    public static PixelPoint PlaceFor(RoamPill pill, RoamRect screen, double scaling, double width, double height)
+    {
+        var at = pill.At;
+        double x, y;
+        if (at is not null && RoamSides.IsHorizontal(at.Side))
+        {
+            var along = at.HasSegment ? (at.SegStart + at.SegEnd) / 2 : at.Along;
+            x = at.Side == RoamSide.Left ? screen.X + 8 * scaling : screen.Right - width - 8 * scaling;
+            y = Math.Clamp(along - height / 2, screen.Y, Math.Max(screen.Y, screen.Bottom - height));
+        }
+        else if (at is not null && at.Side == RoamSide.Above)
+        {
+            x = Math.Clamp((at.HasSegment ? (at.SegStart + at.SegEnd) / 2 : at.Along) - width / 2, screen.X, Math.Max(screen.X, screen.Right - width));
+            y = screen.Y + 8 * scaling;
+        }
+        else
+        {
+            x = screen.X + (screen.W - width) / 2;
+            y = screen.Bottom - height - 64 * scaling;
+        }
+        return new PixelPoint((int)Math.Round(x), (int)Math.Round(y));
     }
 }

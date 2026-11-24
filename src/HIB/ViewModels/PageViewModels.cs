@@ -507,6 +507,34 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand] void ForgetScreens() { _app.Flick.Picker.ForgetAims(); RefreshFlick(); }
     [RelayCommand] void OpenDataFolder() => PlatformShell.Open(_app.Core.Options.DataDir);
 
+    // ---- mouse & keyboard (Roam, SPACE.md §12.4–§12.5) ----
+
+    /// <summary>"Game mode: automatic (default) / off".</summary>
+    public bool RoamGameMode
+    {
+        get => _app.Core.Roam.Options.GameMode;
+        set
+        {
+            if (value == RoamGameMode) return;
+            _app.Core.Roam.SetGameMode(value);
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Locking one computer locks the others (default on).</summary>
+    public bool RoamLockTogether
+    {
+        get => _app.Core.Roam.Options.LockTogether;
+        set
+        {
+            if (value == RoamLockTogether) return;
+            _app.Core.Roam.SetLockTogether(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public const string RoamHotkeysText = "Scroll Lock or Ctrl+Alt+Shift+L keeps the mouse on the computer it's on. Ctrl+Alt+Shift+arrows jump to the computer on that side.";
+
     // ---- install (Windows): an unzipped copy offers to install itself; the installed copy can uninstall ----
     public bool OfferInstall { get; }
     public bool IsInstalled { get; }

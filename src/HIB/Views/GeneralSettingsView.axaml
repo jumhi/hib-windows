@@ -79,6 +79,33 @@
         </StackPanel>
       </Border>
 
+      <!-- Mouse & keyboard (Roam, SPACE.md §12.4–§12.5) -->
+      <Border Classes="card">
+        <StackPanel>
+          <TextBlock Text="MOUSE &amp; KEYBOARD" Classes="label" Margin="0,0,0,6"/>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Mouse}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Game mode · automatic"/>
+              <TextBlock Text="A full-screen game keeps the mouse; leave at the top of the edge with two pushes." Classes="faint" TextWrapping="Wrap"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.RoamGameMode}"/>
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Lock}" Classes="muted" Margin="0,0,10,0"/>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Lock together"/>
+              <TextBlock Text="Locking this PC locks your other computers too." Classes="faint" TextWrapping="Wrap"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding S.RoamLockTogether}"/>
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" Margin="0,8,0,0">
+            <c:Icon Data="{x:Static vm:Icons.Keyboard}" Classes="muted" Margin="0,0,10,0" VerticalAlignment="Top"/>
+            <TextBlock Grid.Column="1" Text="{x:Static vm:SettingsViewModel.RoamHotkeysText}" Classes="caption" TextWrapping="Wrap"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Text="STORAGE" Classes="label"/>

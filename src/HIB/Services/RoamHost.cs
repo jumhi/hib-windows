@@ -1,6 +1,7 @@
 // H.I.B Roam on the desktop (docs/SPACE.md §9.5–§9.6): tells the engine this PC's monitors, and shows what
 // the engine asks for — the edge glow, the drop catcher at the edge, the ghost card of a file dragged in
-// from the other computer, and the "is on this side now · Undo" notice.
+// from the other computer, the "is on this side now · Undo" notice, and the round-2 pills (SPACE.md §12: game
+// mode, the gate, "Locked to …", the admin-app warning).
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +27,7 @@ public sealed partial class RoamHost : IDisposable
     RoamGhostWindow? _ghost;
     RoamNoticeWindow? _notice;
     RoamDropCatcherWindow? _catcher;
+    RoamPillWindow? _pill;
 
     public RoamHost(AppController app)
     {
@@ -53,6 +55,7 @@ public sealed partial class RoamHost : IDisposable
         };
         roam.ProbeChanged += p => Dispatcher.UIThread.Post(() => ApplyProbe(p));
         roam.SideLearned += n => Dispatcher.UIThread.Post(() => ShowNotice(n));
+        roam.PillChanged += p => Dispatcher.UIThread.Post(() => ShowPill(p));
     }
 
     /// <summary>The edge glow on screen (UI thread), or null.</summary>
@@ -60,6 +63,7 @@ public sealed partial class RoamHost : IDisposable
     public RoamGhostWindow? Ghost => _ghost;
     public RoamNoticeWindow? Notice => _notice;
     public RoamDropCatcherWindow? Catcher => _catcher;
+    public RoamPillWindow? Pill => _pill;
 
     /// <summary>Tells the engine this PC's monitors (UI thread; PointFlickHost calls it with screensInfo).</summary>
     public void PublishDisplays()
@@ -225,8 +229,34 @@ public sealed partial class RoamHost : IDisposable
         w.Show();
     }
 
+    // ---------------- round-2 pills (§12) ----------------
+
+    /// <summary>Shows (or hides, null) a pill (UI thread).</summary>
+    public void ShowPill(RoamPill? pill)
+    {
+        _pill?.Close();
+        _pill = null;
+        if (pill is null) return;
+        var displays = _app.Core.Roam.Displays;
+        var screenPx = pill.At?.Screen ?? displays.FirstOrDefault(d => d.Primary)?.Pixels ?? displays.FirstOrDefault()?.Pixels ?? new RoamRect(0, 0, 1920, 1080);
+        var screen = ScreenFor(screenPx);
+        var scale = screen?.Scaling > 0 ? screen.Scaling : 1;
+        var w = new RoamPillWindow(pill);
+        _pill = w;
+        w.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_pill, w)) _pill = null;
+        };
+        // Placed by its measured size before it shows, and again whenever its real size is known.
+        var size = w.MeasuredSize();
+        w.Position = RoamPillWindow.PlaceFor(pill, screenPx, scale, size.Width * scale, size.Height * scale);
+        w.SizeChanged += (_, e) => w.Position = RoamPillWindow.PlaceFor(pill, screenPx, scale, e.NewSize.Width * scale, e.NewSize.Height * scale);
+        w.Show();
+    }
+
     public void Dispose()
     {
+        _pill?.Close();
         _edge?.FadeOutAndClose();
         _ghost?.Close();
         _notice?.Close();

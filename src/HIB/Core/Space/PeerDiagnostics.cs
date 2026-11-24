@@ -13,8 +13,11 @@ public static class PeerDiagnostics
 {
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
-    /// <summary>Where this PC's logs live (hib.log's folder).</summary>
-    public static string LogsDirectory => Path.GetDirectoryName(HIB.Features.HibLog.DefaultPath())!;
+    /// <summary>Where this PC's logs live (hib.log's folder; tests point it elsewhere).</summary>
+    public static string LogsDirectory => DirectoryOverride ?? Path.GetDirectoryName(HIB.Features.HibLog.DefaultPath())!;
+
+    /// <summary>Tests: save fetched logs here instead of the user's logs folder.</summary>
+    public static string? DirectoryOverride { get; set; }
 
     /// <summary>A file name for a computer's log: its name with anything a file name can't hold replaced.</summary>
     public static string FileNameFor(string computer)

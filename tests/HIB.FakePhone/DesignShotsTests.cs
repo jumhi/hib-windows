@@ -408,4 +408,65 @@ public class DesignShotsTests
         SaveShot(Capture(noticeHost), "windows-roam-notice");
         noticeHost.Close();
     }
+    [AvaloniaFact]
+    public async Task Roam_round2_row_settings_and_pills()
+    {
+        // SPACE.md §12: the Mouse & keyboard row with speeds, natural scrolling, latency (a slow Wi-Fi link) and Get log.
+        await using (var setup = await RoamUiTests.Setup.StartAsync(renderScale: 2))
+        {
+            setup.Window.Height = 1040;
+            setup.Main.Navigate("devices");
+            await RoamUiTests.PumpUntil(() => setup.MacCard?.HasRoam == true);
+            setup.Host.Core.Roam.SetSide(RoamUiTests.MacName, HIB.Core.Roam.RoamSide.Left);
+            setup.Host.Core.Roam.SetPointerSpeed(RoamUiTests.MacName, 1.25);
+            setup.Host.Core.Roam.SetNaturalScroll(RoamUiTests.MacName, true);
+            var link = setup.Host.Core.SpaceEngine.Network.Get(RoamUiTests.MacName)!;
+            for (var i = 0; i < HIB.Core.Roam.LatencyMeter.Samples; i++) link.Latency.Add(31);
+            await RoamUiTests.PumpUntil(() => setup.MacCard?.RoamSlowLink == true && setup.MacCard.RoamPointerSpeedText == "1.25×");
+            await Pump(400);
+            Shot(setup.Window, "windows-roam2-devices");
+
+            // Settings › This PC: game mode and lock together.
+            setup.Main.Navigate("general");
+            await Pump(400);
+            Shot(setup.Window, "windows-roam2-settings");
+        }
+
+        // The pills on a 1440×900 desktop: the gate at the top of the right edge, then game mode, locked and the admin app.
+        Border Place(HIB.Core.Roam.RoamPill pill, double left, double top, bool right = false)
+        {
+            var b = HIB.Views.Roam.RoamPillWindow.Capsule(pill);
+            b.HorizontalAlignment = right ? Avalonia.Layout.HorizontalAlignment.Right : Avalonia.Layout.HorizontalAlignment.Left;
+            b.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+            b.Margin = new Thickness(left, top, right ? 8 : 0, 0);
+            return b;
+        }
+        Window Desk(params Control[] items)
+        {
+            var desk = new Bitmap(new MemoryStream(Png(2880, 1800, Desktop)));
+            var panel = new Panel { Children = { new Image { Source = desk, Stretch = Stretch.Fill } } };
+            foreach (var c in items) panel.Children.Add(c);
+            var w = new Window { Width = 1440, Height = 900, Content = panel };
+            w.SetRenderScaling(2);
+            w.Show();
+            return w;
+        }
+        var mac = RoamUiTests.MacName;
+        var gate = Desk(
+            new Border { Width = 4, Height = 135, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Background = HIB.Views.Flick.FlickTheme.Solid(HIB.Views.Flick.FlickTheme.Cyan),
+                BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, Spread = 1, Color = HIB.Views.Flick.FlickTheme.A(HIB.Views.Flick.FlickTheme.Cyan, 0.95) }) },
+            Place(new HIB.Core.Roam.RoamPill(HIB.Core.Roam.RoamPillKind.Gate, HIB.Core.Roam.RoamPill.GateText), 0, 30, right: true));
+        await Pump(300);
+        SaveShot(Capture(gate), "windows-roam2-gate");
+        gate.Close();
+
+        var pills = Desk(
+            Place(new HIB.Core.Roam.RoamPill(HIB.Core.Roam.RoamPillKind.GameMode, HIB.Core.Roam.RoamPill.GameModeText(mac)), 0, 380, right: true),
+            Place(new HIB.Core.Roam.RoamPill(HIB.Core.Roam.RoamPillKind.Locked, HIB.Core.Roam.RoamPill.LockedText("Office PC")), 600, 640),
+            Place(new HIB.Core.Roam.RoamPill(HIB.Core.Roam.RoamPillKind.AdminApp, HIB.Core.Roam.UipiGuard.PillText), 430, 720));
+        await Pump(300);
+        SaveShot(Capture(pills), "windows-roam2-pills");
+        pills.Close();
+    }
 }

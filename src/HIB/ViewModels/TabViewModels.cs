@@ -291,6 +291,83 @@ public sealed partial class DeviceCardViewModel : ObservableObject
 
     [RelayCommand] void RoamLeft() => RoamEngine.SetSide(Id, HIB.Core.Roam.RoamSide.Left);
     [RelayCommand] void RoamRight() => RoamEngine.SetSide(Id, HIB.Core.Roam.RoamSide.Right);
+
+    // ---------------- Roam round 2 (SPACE.md §12.2–§12.5) ----------------
+
+    /// <summary>"Latency 3 ms" (the link's ping round trip, median of the last 20), or empty before the first.</summary>
+    public string RoamLatencyText => Roam?.LatencyMs is { } ms ? HIB.Core.Roam.LatencyMeter.Text(ms) : "";
+    public bool RoamHasLatency => RoamLatencyText.Length > 0;
+    /// <summary>Above 25 ms: "Wi-Fi is adding delay — 5 GHz or a cable to one computer helps".</summary>
+    public bool RoamSlowLink => Roam?.LatencyMs is { } ms && ms > HIB.Core.Roam.LatencyMeter.TipAboveMs;
+    public string RoamLatencyTip => HIB.Core.Roam.LatencyMeter.Tip;
+
+    /// <summary>Pointer speed on that computer, 0.5×–2×.</summary>
+    public double RoamPointerSpeed
+    {
+        get => Roam?.PointerSpeed ?? 1;
+        set
+        {
+            if (Roam is { } r && Math.Abs(r.PointerSpeed - value) > 0.001) RoamEngine.SetPointerSpeed(Id, value);
+        }
+    }
+
+    public string RoamPointerSpeedText => HIB.Core.Roam.RoamSpeed.Label(RoamPointerSpeed);
+
+    /// <summary>Scroll speed on that computer, 0.5×–2×.</summary>
+    public double RoamScrollSpeed
+    {
+        get => Roam?.ScrollSpeed ?? 1;
+        set
+        {
+            if (Roam is { } r && Math.Abs(r.ScrollSpeed - value) > 0.001) RoamEngine.SetScrollSpeed(Id, value);
+        }
+    }
+
+    public string RoamScrollSpeedText => HIB.Core.Roam.RoamSpeed.Label(RoamScrollSpeed);
+
+    public bool RoamNaturalScroll
+    {
+        get => Roam?.NaturalScroll ?? false;
+        set
+        {
+            if (Roam is { } r && r.NaturalScroll != value) RoamEngine.SetNaturalScroll(Id, value);
+        }
+    }
+
+    /// <summary>What a computer's game is doing, when it is one ("Game mode on PC-INTERN · VALORANT").</summary>
+    public bool RoamHasGame => Roam is { RemoteGame: not HIB.Core.Roam.RoamGameMode.Normal };
+    public string RoamGameText => Roam is { RemoteGame: var g, RemoteApp: var app } && g != HIB.Core.Roam.RoamGameMode.Normal
+        ? (g == HIB.Core.Roam.RoamGameMode.Locked ? "Game in front" : "Full-screen app in front") + (app.Length > 0 ? " · " + System.IO.Path.GetFileNameWithoutExtension(app) : "")
+        : "";
+
+    /// <summary>How "Get log" opens the saved file (tests replace it).</summary>
+    public static Action<string> RevealLog { get; set; } = HIB.Core.Platform.PlatformShell.RevealInFolder;
+
+    [ObservableProperty] public partial bool IsGettingLog { get; set; }
+
+    /// <summary>
+    /// SPACE.md §12.2 "Get log": asks that computer for its H.I.B log over the direct link and saves it as
+    /// %LOCALAPPDATA%\H.I.B\logs\&lt;name&gt;.log, then shows it in its folder.
+    /// </summary>
+    [RelayCommand]
+    async Task GetLog()
+    {
+        if (IsGettingLog) return;
+        IsGettingLog = true;
+        Status = $"Getting the log from {Name}…";
+        try
+        {
+            var (path, problem) = await HIB.Core.Space.PeerDiagnostics.FetchAsync(_owner.App.Core.SpaceEngine.Network, Id, Name);
+            if (path is null)
+            {
+                Status = problem ?? "Couldn't get the log";
+                return;
+            }
+            Status = $"Saved {System.IO.Path.GetFileName(path)} with this PC's logs";
+            RevealLog(path);
+        }
+        finally { IsGettingLog = false; }
+    }
 }
 
 public partial class DevicesViewModel : ViewModelBase
