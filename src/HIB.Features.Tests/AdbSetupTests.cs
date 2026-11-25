@@ -366,3 +366,32 @@ public class AdbSetupSessionTests
         await Until(() => old.Fake.Commands.Contains("mdns services")); // the QR is found the old way
     }
 }
+
+/// <summary>SPACE.md §16.3: the app-ops granter also lets the phone read its own log and show its 1×1 overlay.</summary>
+public class AppOpsGranterTests
+{
+    [Fact]
+    public async Task Grants_clipboard_logs_and_overlay_best_effort_and_logs_each()
+    {
+        var fake = new FakeAdb();
+        var adb = fake.Service();
+        adb.MarkConnected("10.0.0.5", 41000, "ok");
+        var granter = new AppOpsGranter(adb);
+        var log = new List<string>();
+        granter.Log += log.Add;
+        // READ_LOGS fails (an older Android): the others still run.
+        fake.Handler = a => string.Join(' ', a).Contains("READ_LOGS") ? FakeAdb.Err("not a changeable permission") : FakeAdb.Ok("");
+
+        Assert.True(await granter.GrantAsync()); // READ_CLIPBOARD is what decides
+        Assert.Equal(new[]
+        {
+            "-s 10.0.0.5:41000 shell appops set com.sameerasw.airsync READ_CLIPBOARD allow",
+            "-s 10.0.0.5:41000 shell pm grant com.sameerasw.airsync android.permission.READ_LOGS",
+            "-s 10.0.0.5:41000 shell appops set com.sameerasw.airsync SYSTEM_ALERT_WINDOW allow",
+        }, fake.Commands);
+        Assert.Equal(3, log.Count);
+        Assert.All(log, l => Assert.StartsWith("[clip] ", l));
+        Assert.Contains(log, l => l.Contains("READ_LOGS") && l.Contains("failed"));
+        Assert.Equal(3, AppOpsGranter.Commands.Count);
+    }
+}

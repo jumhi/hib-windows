@@ -784,6 +784,9 @@ sealed class RawMac : IAsyncDisposable
 
     readonly byte[] _key;
 
+    /// <summary>Stops answering pings (a computer gone quiet).</summary>
+    public bool Mute { get; set; }
+
     RawMac(byte[] key) => _key = key;
 
     public static async Task<RawMac> DialAsync(int port, byte[] key, string id = "A Mac")
@@ -827,6 +830,7 @@ sealed class RawMac : IAsyncDisposable
                 using var doc = JsonDocument.Parse(plain);
                 if (doc.RootElement.GetProperty("type").GetString() == "ping")
                 {
+                    if (Mute) continue;
                     await SendAsync("pong", new { });
                     continue;
                 }

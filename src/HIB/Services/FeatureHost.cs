@@ -93,7 +93,12 @@ public sealed class AppLoginCodeClipboard : ILoginCodeClipboard
     void Write(string text)
     {
         Interlocked.Increment(ref _ownWrites);
-        _core.Clipboard?.SuppressNextLocalChange(text);
+        // Through the clipboard sync (SPACE.md §16.2): a code from the phone is applied, never sent back to it.
+        if (_core.Clipboard is { } sync)
+        {
+            _ = sync.WriteTextAsync(text);
+            return;
+        }
         Dispatcher.UIThread.Post(async () =>
         {
             var cb = _top()?.Clipboard;
@@ -139,6 +144,7 @@ public sealed class FeatureHost : IDisposable
         Adb = new AdbService(AdbLocator.Shared, Settings);
         Pairing = new AdbPairingService(Adb);
         AppOps = new AppOpsGranter(Adb);
+        AppOps.Log += core.AddLog;
         AppOps.Start();
         Mirror = new MirrorService(Adb, Settings);
         Audio = new PhoneAudioBridge(Adb, Link, Settings);

@@ -61,8 +61,8 @@ public sealed class PhoneHub
     public event Action<NowPlaying?>? NowPlayingChanged;
     public event Action<CallInfo>? CallChanged;
     public event Action<string>? CallProgress;
-    public event Action<string>? ClipboardTextReceived;
-    public event Action<byte[], string, string>? ClipboardImageReceived; // bytes, mime, name
+    /// <summary>A clip from the phone (text or image) with its identity (SPACE.md §16.1; filled in for older phones).</summary>
+    public event Action<Clip>? ClipReceived;
     public event Action<bool>? RingStateChanged;
     public event Action<FlickInfo>? FlickStarted;
     public event Action? AppsChanged;
@@ -94,12 +94,13 @@ public sealed class PhoneHub
                 break;
 
             case "clipboardUpdate":
-                if (d.Str("text") is { Length: > 0 } text) ClipboardTextReceived?.Invoke(text);
+                if (d.Str("text") is { Length: > 0 } text)
+                    ClipReceived?.Invoke(ClipIdentity.FromWire(d, text, null, ClipIdentity.Phone, ClipIdentity.NowMs()));
                 break;
 
             case "clipboardImageUpdate":
                 if (LenientJson.Base64(d.Str("base64")) is { Length: > 0 } img)
-                    ClipboardImageReceived?.Invoke(img, d.Str("mime") ?? "image/png", d.Str("name") ?? "HIB-Clipboard.png");
+                    ClipReceived?.Invoke(ClipIdentity.FromWire(d, null, img, ClipIdentity.Phone, ClipIdentity.NowMs()));
                 break;
 
             case "call_event":
@@ -309,10 +310,24 @@ public sealed class PhoneHub
         return ok;
     }
 
-    public Task<bool> SendClipboardTextAsync(string text) => _link.SendAsync("clipboardUpdate", new { text });
+    /// <summary>
+    /// <c>clipboardUpdate {text, id, ts, origin}</c> (SPACE.md §16.1). Without <paramref name="clip"/> (an explicit "Send
+    /// clipboard") it gets a new id, now, and this computer as origin.
+    /// </summary>
+    public Task<bool> SendClipboardTextAsync(string text, Clip? clip = null)
+    {
+        clip ??= new Clip(text, null, ClipIdentity.NewId(), ClipIdentity.NowMs(), _link.DesktopName);
+        return _link.SendAsync("clipboardUpdate", new { text, id = clip.Id, ts = clip.Ts, origin = clip.Origin });
+    }
 
-    public Task<bool> SendClipboardImageAsync(byte[] png)
-        => _link.SendAsync("clipboardImageUpdate", new { base64 = Convert.ToBase64String(png), mime = "image/png", name = "HIB-Clipboard.png" });
+    public Task<bool> SendClipboardImageAsync(byte[] png, Clip? clip = null)
+    {
+        clip ??= new Clip(null, png, ClipIdentity.NewId(), ClipIdentity.NowMs(), _link.DesktopName);
+        return _link.SendAsync("clipboardImageUpdate", new
+        {
+            base64 = Convert.ToBase64String(png), mime = "image/png", name = "HIB-Clipboard.png", id = clip.Id, ts = clip.Ts, origin = clip.Origin,
+        });
+    }
 
     public Task<bool> DisconnectPhoneAsync() => _link.SendAsync("disconnectRequest");
 }

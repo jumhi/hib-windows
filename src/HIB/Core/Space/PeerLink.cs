@@ -53,13 +53,16 @@ public sealed class PeerLink : ILinkSession, IDisposable
     // SPACE.md §12.3 latency: when each of our pings went out (pongs come back in order on one TCP connection).
     readonly System.Collections.Concurrent.ConcurrentQueue<long> _pings = new();
     TaskCompletionSource<(string Version, string Text)>? _diag;
-    long _lastActivityTicks = DateTime.UtcNow.Ticks;
+    readonly Func<DateTime> _clock;
+    long _lastActivityTicks;
     int _closed;
     bool _helloDone;
     bool _anyDecrypted;
 
-    internal PeerLink(WebSocket ws, IDisposable? owner, byte[] key, PeerHello own, bool isClient, string remoteIp)
+    internal PeerLink(WebSocket ws, IDisposable? owner, byte[] key, PeerHello own, bool isClient, string remoteIp, Func<DateTime>? clock = null)
     {
+        _clock = clock ?? (() => DateTime.UtcNow);
+        _lastActivityTicks = _clock().Ticks;
         _ws = ws;
         _owner = owner;
         _key = (byte[])key.Clone();
@@ -356,7 +359,7 @@ public sealed class PeerLink : ILinkSession, IDisposable
         finally { Interlocked.CompareExchange(ref _diag, null, tcs); }
     }
 
-    void Touch() => Interlocked.Exchange(ref _lastActivityTicks, DateTime.UtcNow.Ticks);
+    void Touch() => Interlocked.Exchange(ref _lastActivityTicks, _clock().Ticks);
 
     /// <summary>Closes with a WebSocket close code (4009 duplicate, 4003 key mismatch…). Idempotent.</summary>
     public async Task CloseAsync(int code, string reason)

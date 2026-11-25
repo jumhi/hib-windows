@@ -53,12 +53,17 @@ public static class RoamSpeed
 
 /// <summary>
 /// §9.4 / §12.5 what a crossing carries: <c>{"text":…}</c> or <c>{"png":"&lt;base64&gt;"}</c>. Text wins when there is any
-/// (as with the phone's clipboard sync); otherwise an image, PNG ≤ 8 000 000 bytes before base64 (SPACE.md §12.6).
+/// (as with the phone's clipboard sync); otherwise an image, PNG ≤ 8 000 000 bytes before base64 (SPACE.md §12.6). §16.1: it
+/// also carries the clip's <c>id</c>, <c>ts</c> and <c>origin</c> (an older computer's crossing has none).
 /// </summary>
 public sealed record RoamClip(string? Text, byte[]? Png)
 {
     public const int MaxTextBytes = RoamWire.MaxClipboardBytes;
     public const int MaxPngBytes = 8_000_000;
+
+    public string? Id { get; init; }
+    public long? Ts { get; init; }
+    public string? Origin { get; init; }
 
     public static RoamClip? Pick(string? text, byte[]? png)
     {
@@ -67,18 +72,47 @@ public sealed record RoamClip(string? Text, byte[]? Png)
         return null;
     }
 
+    /// <summary>A clip from the clipboard sync, with its identity (null when it can't cross).</summary>
+    public static RoamClip? From(HIB.Core.Phone.Clip clip)
+        => Pick(clip.Text, clip.Png) is { } c ? c with { Id = clip.Id, Ts = clip.Ts, Origin = clip.Origin } : null;
+
+    /// <summary>The clip with its identity; an older computer's crossing gets the §16.1 defaults (content id, now, that computer).</summary>
+    public HIB.Core.Phone.Clip ToClip(string fallbackOrigin, long now)
+        => new(Text, Text is null ? Png : null, Id ?? HIB.Core.Phone.ClipIdentity.ContentId(Text, Png), Ts is > 0 ? Ts.Value : now,
+            string.IsNullOrEmpty(Origin) ? fallbackOrigin : Origin);
+
     /// <summary>What it is, to send it only when it changed since the last crossing.</summary>
     public string Signature => Text is { } t ? "t:" + Hash(Encoding.UTF8.GetBytes(t)) : "p:" + Hash(Png ?? Array.Empty<byte>());
 
     static string Hash(byte[] b) => Convert.ToHexString(SHA256.HashData(b));
 
-    public JsonObject ToWire() => Text is { } t ? new JsonObject { ["text"] = t } : new JsonObject { ["png"] = Convert.ToBase64String(Png ?? Array.Empty<byte>()) };
+    public JsonObject ToWire()
+    {
+        var o = Text is { } t ? new JsonObject { ["text"] = t } : new JsonObject { ["png"] = Convert.ToBase64String(Png ?? Array.Empty<byte>()) };
+        if (Id is not null) o["id"] = Id;
+        if (Ts is not null) o["ts"] = Ts.Value;
+        if (Origin is not null) o["origin"] = Origin;
+        return o;
+    }
 
     /// <summary>A crossing's <c>clipboard</c>, or null (none, unreadable, or over the limits).</summary>
     public static RoamClip? Parse(JsonElement data)
     {
         if (data.Obj("clipboard") is not { } c) return null;
-        if (c.Str("text") is { } text) return Encoding.UTF8.GetByteCount(text) <= MaxTextBytes ? new RoamClip(text, null) : null;
+        RoamClip? clip;
+        if (c.Str("text") is { } text) clip = Encoding.UTF8.GetByteCount(text) <= MaxTextBytes ? new RoamClip(text, null) : null;
+        else clip = ParsePng(c);
+        if (clip is null) return null;
+        return clip with
+        {
+            Id = c.Str("id") is { Length: > 0 and <= 128 } id ? id : null,
+            Ts = c.Long("ts") is { } ts && ts > 0 ? ts : null,
+            Origin = c.Str("origin") is { Length: > 0 } o ? o : null,
+        };
+    }
+
+    static RoamClip? ParsePng(JsonElement c)
+    {
         if (c.Str("png") is not { Length: > 0 } b64 || b64.Length > MaxPngBytes / 3 * 4 + 8) return null;
         try
         {
