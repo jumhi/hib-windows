@@ -190,6 +190,7 @@ public sealed unsafe partial class WindowsDesktopControl : IDesktopControl
 
     public void MouseMove(double dx, double dy)
     {
+        using var physical = PhysicalPixels.Enter();
         if (!GetCursorPos(out var p)) return;
         // The phone moves in points: scale by the monitor under the cursor.
         var scale = 1.0;
@@ -206,6 +207,33 @@ public sealed unsafe partial class WindowsDesktopControl : IDesktopControl
         var nx = (int)Math.Round((x - vx) * 65535.0 / (vw - 1));
         var ny = (int)Math.Round((y - vy) * 65535.0 / (vh - 1));
         SendMouse(0x0001 | 0x8000 | 0x4000 /* MOVE | ABSOLUTE | VIRTUALDESK */, nx, ny, 0);
+    }
+
+    public void MouseMoveTo(int x, int y)
+    {
+        // SPACE.md §15.5 mouse_move_abs: a desktop pixel (physical, any monitor, negative origins too) as SendInput's
+        // 0…65535 across the virtual desktop. Physical pixels on this thread so the metrics match the display bounds.
+        using var physical = PhysicalPixels.Enter();
+        var desk = new HIB.Core.Remote.PixelBox(GetSystemMetrics(76), GetSystemMetrics(77), GetSystemMetrics(78), GetSystemMetrics(79));
+        if (desk.W <= 1 || desk.H <= 1) return;
+        var (nx, ny) = RemotePointer.Normalize(x, y, desk);
+        SendMouse(0x0001 | 0x8000 | 0x4000 /* MOVE | ABSOLUTE | VIRTUALDESK */, nx, ny, 0);
+    }
+
+    /// <summary>Per-monitor-v2 DPI awareness for the current thread while it is in scope (cursor, metrics and SendInput in physical pixels).</summary>
+    readonly struct PhysicalPixels : IDisposable
+    {
+        readonly nint _old;
+        PhysicalPixels(nint old) => _old = old;
+        public static PhysicalPixels Enter()
+        {
+            try { return new PhysicalPixels(SetThreadDpiAwarenessContext(-4 /* PER_MONITOR_AWARE_V2 */)); }
+            catch { return default; }
+        }
+        public void Dispose()
+        {
+            if (_old != 0) try { SetThreadDpiAwarenessContext(_old); } catch { }
+        }
     }
 
     public void MouseButton(RoamButton button, bool down)
@@ -402,6 +430,7 @@ public sealed unsafe partial class WindowsDesktopControl : IDesktopControl
     [LibraryImport("user32.dll")] private static partial uint SendInput(uint count, INPUT* inputs, int size);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetCursorPos(out POINT p);
     [LibraryImport("user32.dll")] private static partial int GetSystemMetrics(int index);
+    [LibraryImport("user32.dll")] private static partial nint SetThreadDpiAwarenessContext(nint context);
     [LibraryImport("user32.dll")] private static partial nint MonitorFromPoint(POINT pt, uint flags);
     [LibraryImport("shcore.dll")] private static partial int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool EnumDisplayMonitors(nint hdc, nint clip, delegate* unmanaged[Stdcall]<nint, nint, RECT*, nint, int> proc, nint data);

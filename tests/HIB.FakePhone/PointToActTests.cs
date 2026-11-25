@@ -34,6 +34,7 @@ sealed class FakeDesktopControl : IDesktopControl
     public void Key(int usage, bool down) => Did($"key {usage:X2} {(down ? "down" : "up")}");
     public void Text(string text) => Did("text " + text);
     public void MouseMove(double dx, double dy) => Did($"move {dx},{dy}");
+    public void MouseMoveTo(int x, int y) => Did($"moveTo {x},{y}");
     public void MouseButton(RoamButton button, bool down) => Did($"button {button} {(down ? "down" : "up")}");
     public void Scroll(double dx, double dy) => Did($"scroll {dx},{dy}");
 }

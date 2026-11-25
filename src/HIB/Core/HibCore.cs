@@ -89,6 +89,12 @@ public sealed class HibCore : IDisposable
         Remote = new HIB.Core.Remote.PhoneRemote(Link, Settings, () => Deck.Control.IsAvailable, () => Aim.Screens, Options.Remote);
         Remote.Log += AddLog;
         Deck.RemoteInputAllowed = () => Remote.Allowed;
+        // §15.5: mouse_move_abs aims at the displays the phone sees; held keys are let go when its /screen session ends.
+        Deck.Displays = Remote.Displays;
+        Remote.SessionChanged += phone =>
+        {
+            if (phone is null) Deck.ReleaseHeld("remote session ended");
+        };
         Roam.System.SessionLockChanged += Remote.ReportLock;
         Link.ConnectionChanged += (_, connected) =>
         {
