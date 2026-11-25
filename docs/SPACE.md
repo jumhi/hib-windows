@@ -872,3 +872,59 @@ D→P {"type":"screenResumed","data":{}}                                // follo
   Recording for H.I.B Input with live tick and Open button.
 - Log: `[remote] opened by <phone> display <name> <w>x<h> <codec>`, `[remote] closed (<reason>)`,
   `[remote] unlock ok|failed <error>` — never the password.
+
+## 16. Clipboard that just works (all three apps)
+Root causes found 2026-11-25: phone copies only synced while H.I.B was on screen (Android denies background
+reads: logcat "Denying clipboard access to com.sameerasw.airsync"); late/stale clips overwrote newer ones (no
+ordering); one copy echoed several times (Roam-applied and BLE-applied clips skipped the sync dedupe; the Mac sent
+every clip over WebSocket **and** BLE); Windows lost copies made around a reconnect, never re-sent text it once
+received, and dropped a copy for good when a clipboard read failed; nothing was re-sent to a computer whose link was
+coming back.
+
+### 16.1 Every clip has an identity
+`clipboardUpdate` (phone link, both directions), the Roam `clipboard` object (§9.4/§12.6) and BLE clips gain:
+```json
+{"text":"…" | "png":"<base64>", "id":"<16 random bytes, base64url>", "ts":1764072000123, "origin":"<device id>"}
+```
+- `ts` = the origin's wall-clock ms when the user copied (when its watcher first saw the change). `origin` = §2 id
+  (`"phone"` for the phone). Relays (the phone) forward `id`, `ts`, `origin` **unchanged** and never send a clip back
+  to its `origin` or to the link it came from.
+- Missing fields (older versions): `id` = sha256 of the content (base64url, first 16 bytes), `ts` = receive time,
+  `origin` = the sending link's device.
+
+### 16.2 Rules on every device
+- **Seen ids:** keep the last 64 ids applied or sent. A clip whose id was seen is ignored (kills echo loops).
+- **Newest wins:** keep `localTs` = ts of what is on this device's clipboard now (its own copy time, or the applied
+  clip's `ts`). Apply an incoming clip only if `ts > localTs - 1500` (1.5 s clock-skew allowance) — a late, older
+  clip never overwrites a newer copy.
+- **Applying is not copying:** after applying, the device records the applied content's sha256 and change marker
+  (Mac `changeCount`, Windows sequence number, Android the clip description timestamp); its watcher must not send
+  that change out again. Every path that writes the clipboard (phone link, Roam crossing, BLE, Flick text copy) goes
+  through the one sync component so this always holds.
+- **Copying the same text again is a new clip:** a user change to the clipboard always gets a new id, even if the
+  text equals an earlier one.
+- **Catch-up on link-up:** when a link becomes ready (phone↔computer, either side), each side sends its current clip
+  (with its original `id`/`ts`/`origin`) if it is a real clip (not empty) and younger than 10 minutes; the other side
+  decides with the rules above. No silent "baseline" that swallows a copy.
+- **Reads that fail are retried:** if reading the clipboard fails (Windows OpenClipboard contention, busy UI thread),
+  retry 5× over ~1 s without marking the change as handled.
+- **One transport per clip:** the Mac sends over BLE only when the WebSocket link is down.
+- **Limits:** text ≤ 1 MB; PNG ≤ 8 000 000 bytes before base64; larger → not carried (log one line).
+- **Settings:** "Clipboard sync" off on a device means it neither sends nor applies (both directions, all paths
+  except an explicit user action such as "Send clipboard").
+
+### 16.3 Phone: copies made while H.I.B is in the background
+- Detection: H.I.B reads its own "Denying clipboard access to com.sameerasw.airsync" log line (needs `READ_LOGS`,
+  granted over ADB by the computer's existing app-ops granter: `pm grant com.sameerasw.airsync
+  android.permission.READ_LOGS` and `appops set com.sameerasw.airsync SYSTEM_ALERT_WINDOW allow`). On that line (or
+  on a `OnPrimaryClipChangedListener` callback that can't read), it briefly takes input focus with a 1×1 focusable
+  overlay window, reads the clip, sends it, removes the overlay (≤ 300 ms, invisible).
+- When `READ_LOGS` isn't granted yet: reading happens whenever H.I.B comes to the front, from the notification's
+  "Send clipboard" action, the Quick Settings tile and the share sheet; Settings → Clipboard shows "Copies made in
+  other apps sync once ADB has set this up" with the state.
+- Android 13+ may ask "Allow H.I.B to access all device logs?" — the setup text tells the user to choose Allow.
+- Image copies on the phone (clip with an image `content://` URI) are sent as `png` (re-encoded, ≤ 8 MB).
+
+### 16.4 Diagnostics
+Each app logs one line per clip event: `[clip] copied|sent|applied|ignored(seen|older|off|size) id=<first 6 chars>
+from=<origin> via=<phone|roam|ble>` — never the content.
