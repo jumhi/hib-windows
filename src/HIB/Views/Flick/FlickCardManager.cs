@@ -558,8 +558,11 @@ public sealed partial class FlickCardManager
 
     async Task CopyTextAsync(TopLevel top, string text)
     {
-        // Copy without bouncing it back to the phone (the phone shares the clipboard itself).
-        _app.Core.Clipboard?.SuppressNextLocalChange(text);
+        // Through the clipboard sync (SPACE.md §16.2): applied, not copied, so it doesn't bounce back to the phone.
+        if (_app.Core.Clipboard is { } sync)
+        {
+            if (await sync.WriteTextAsync(text)) return;
+        }
         var cb = top.Clipboard ?? _app.MainWindow?.Clipboard;
         if (cb is null) return;
         try { await Avalonia.Input.Platform.ClipboardExtensions.SetTextAsync(cb, text); } catch { }

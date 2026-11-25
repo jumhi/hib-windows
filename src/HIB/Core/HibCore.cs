@@ -78,7 +78,7 @@ public sealed class HibCore : IDisposable
         };
         space.Log += AddLog;
         Space = space;
-        Roam = new HIB.Core.Roam.RoamEngine(space, Link, Options.DataDir, Options.Roam) { Clipboard = () => ClipboardBridge };
+        Roam = new HIB.Core.Roam.RoamEngine(space, Link, Options.DataDir, Options.Roam) { Clipboard = () => this.Clipboard };
         Roam.Log += AddLog;
         FlickPicker = new FlickScreenPicker(Path.Combine(Options.DataDir, "flick-screens.json"));
         Aim = new PointAim(Link);
@@ -141,9 +141,10 @@ public sealed class HibCore : IDisposable
 
     public void AttachClipboard(IClipboardBridge bridge, TimeSpan? interval = null)
     {
-        Clipboard?.Dispose();
+        Clipboard?.Detach();
         ClipboardBridge = bridge;
-        Clipboard = new ClipboardSync(Link, Hub, Settings, bridge, interval);
+        // SPACE.md §16: every clipboard write (phone link, Roam crossings, Flick text, login codes) goes through this one.
+        Clipboard = new ClipboardSync(Link, Hub, Settings, bridge, interval, () => Space.ThisDeviceName);
         Clipboard.Log += AddLog;
         Clipboard.Start();
     }

@@ -25,8 +25,8 @@ public sealed class RoamOptions
     public Func<DateTime>? Clock { get; set; }
     /// <summary>The watchdog/ping tick while this computer controls another.</summary>
     public TimeSpan Tick { get; set; } = TimeSpan.FromMilliseconds(100);
-    /// <summary>The most a crossing waits for the clipboard.</summary>
-    public TimeSpan ClipboardTimeout { get; set; } = TimeSpan.FromMilliseconds(250);
+    /// <summary>The most a crossing waits for the clipboard (read retries included; SPACE.md §16.2).</summary>
+    public TimeSpan ClipboardTimeout { get; set; } = TimeSpan.FromMilliseconds(600);
     /// <summary>The room (SPACE.md §10): roomLayout and portals. Off = §9.2 only, like an older H.I.B (tests of the §9.2 path).</summary>
     public bool Room { get; set; } = true;
     /// <summary>SPACE.md §12: Mouse Keys, the window in front, keep awake, lock (Windows by default; nothing elsewhere).</summary>
@@ -103,6 +103,12 @@ public sealed partial class RoamEngine : IDisposable
         public string GameApp = "";
         public DateTime LastLatencyPing;
         public int? ShownLatency;
+        /// <summary>§9.4: the clip id this computer has from us (carried on a crossing that went out, or brought by it).</summary>
+        public string? LastClipId;
+        /// <summary>The clip id riding the ctlEnter/ctlLeave being sent: carried only once that frame went out.</summary>
+        public string? PendingClipId;
+        /// <summary>Set while its ctlRelease brings the cursor home.</summary>
+        public bool ReleasedByIt;
     }
 
     readonly SpaceEngine _space;
@@ -122,7 +128,6 @@ public sealed partial class RoamEngine : IDisposable
     string? _controlledBy;
     (double X, double Y) _remoteCursor;
     RoamGhost? _ghost;
-    string? _lastCrossText;
     (string PeerId, string? Previous)? _undo;
     bool _timerOn;
     bool _disposed;
@@ -153,8 +158,8 @@ public sealed partial class RoamEngine : IDisposable
         phone.MessageReceived += OnPhoneMessage;
     }
 
-    /// <summary>Where the clipboard is read and written on crossings (SPACE.md §9.4).</summary>
-    public Func<IClipboardBridge?> Clipboard { get; set; } = () => null;
+    /// <summary>The clipboard sync every crossing reads and writes through (SPACE.md §9.4, §16).</summary>
+    public Func<ClipboardSync?> Clipboard { get; set; } = () => null;
 
     public IRoamPlatform Platform => _platform;
 
@@ -418,6 +423,8 @@ public sealed partial class RoamEngine : IDisposable
             p.LastSentRoom = null; // §10.2: the room goes out on every peer hello
             p.Game = RoamGameMode.Normal;
             p.GameApp = "";
+            p.LastClipId = null;
+            p.PendingClipId = null;
             p.Outbox.Clear();
             p.Pump = new CancellationTokenSource();
             var ct = p.Pump.Token;
@@ -519,9 +526,14 @@ public sealed partial class RoamEngine : IDisposable
                     continue;
                 }
                 var data = item.Deferred is { } d ? await d.ConfigureAwait(false) : item.Data ?? new JsonObject();
-                await link.SendAsync(item.Type, data, CancellationToken.None).ConfigureAwait(false);
+                var sent = await link.SendAsync(item.Type, data, CancellationToken.None).ConfigureAwait(false);
+                if (item.Type is RoamWire.Enter or RoamWire.Leave) ClipSent(p, sent);
             }
-            catch (Exception ex) { WriteLog($"Roam send {item.Type}: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                if (item.Type is RoamWire.Enter or RoamWire.Leave) ClipSent(p, false);
+                WriteLog($"Roam send {item.Type}: {ex.Message}");
+            }
         }
     }
 
@@ -558,7 +570,7 @@ public sealed partial class RoamEngine : IDisposable
                 }
                 var first = _controlledBy is null;
                 _controlledBy = p.Id;
-                ApplyClipboard(RoamClip.Parse(d));
+                ApplyClipboard(p, RoamClip.Parse(d));
                 var x = d.Double("x") ?? 0;
                 var y = d.Double("y") ?? 0;
                 _remoteCursor = (x, y);
@@ -623,12 +635,18 @@ public sealed partial class RoamEngine : IDisposable
                 break;
             case RoamWire.Leave:
                 if (!controlled) break;
-                ApplyClipboard(RoamClip.Parse(d));
+                ApplyClipboard(p, RoamClip.Parse(d));
                 WriteLog($"Roam: {p.Name} left");
                 StopControlled();
                 break;
             case RoamWire.Release:
-                _controller.Released(p.Id);
+                // It may not have taken the clip we sent along (busy, Roam off): carry it again next time. The ctlLeave
+                // that answers it carries none — that computer isn't being driven any more and ignores it.
+                p.LastClipId = null;
+                p.PendingClipId = null; // even if the ctlEnter's send is only now reporting back
+                p.ReleasedByIt = true;
+                try { _controller.Released(p.Id); }
+                finally { p.ReleasedByIt = false; }
                 break;
             case RoamWire.DragBegin:
                 if (!controlled) break;
@@ -762,42 +780,43 @@ public sealed partial class RoamEngine : IDisposable
     // ---------------- clipboard (§9.4) ----------------
 
     /// <summary>
-    /// What a crossing carries (§9.4, §12.5): the clipboard's text, or — with no text — its image as PNG (≤ 8 MB); null when
-    /// nothing changed since the last crossing either way.
+    /// What a crossing to <paramref name="p"/> carries (§9.4, §12.5, §16): the current clip from the clipboard sync (text,
+    /// or a PNG ≤ 8 MB) with its id, ts and origin; null when that computer has it already, sync is off or nothing is there.
+    /// It counts as carried only once the frame went out (<see cref="ClipSent"/>).
     /// </summary>
-    async Task<RoamClip?> CrossingClipboardAsync()
+    async Task<RoamClip?> CrossingClipboardAsync(Peer p)
     {
-        var cb = Clipboard();
-        if (cb is null) return null;
-        string? text;
-        byte[]? png = null;
-        try
-        {
-            text = await Within(cb.GetTextAsync(), _options.ClipboardTimeout).ConfigureAwait(false);
-            if (string.IsNullOrEmpty(text)) png = await Within(cb.GetImagePngAsync(), _options.ClipboardTimeout * 3).ConfigureAwait(false);
-        }
+        if (Clipboard() is not { } sync) return null;
+        Clip? clip;
+        try { clip = await sync.ForCrossingAsync(_options.ClipboardTimeout).ConfigureAwait(false); }
         catch { return null; }
-        if (RoamClip.Pick(text, png) is not { } clip) return null;
-        var sig = clip.Signature;
+        if (clip is null || RoamClip.From(clip) is not { } carried) return null;
         lock (_gate)
         {
-            if (sig == _lastCrossText) return null; // unchanged since the last crossing
-            _lastCrossText = sig;
+            if (p.LastClipId == clip.Id) return null; // unchanged since the last crossing either way
+            p.PendingClipId = clip.Id;
         }
-        return clip;
+        return carried;
     }
 
-    static async Task<T?> Within<T>(Task<T?> read, TimeSpan timeout) where T : class
-        => await Task.WhenAny(read, Task.Delay(timeout)).ConfigureAwait(false) == read ? await read.ConfigureAwait(false) : null;
+    /// <summary>The ctlEnter/ctlLeave with a clip went out (or didn't): only now is the clip carried (finding 8).</summary>
+    void ClipSent(Peer p, bool sent)
+    {
+        lock (_gate)
+        {
+            if (sent && p.PendingClipId is { } id) p.LastClipId = id;
+            p.PendingClipId = null;
+        }
+    }
 
-    void ApplyClipboard(RoamClip? clip)
+    /// <summary>A crossing brought a clip: it goes through the clipboard sync (seen ids, newest wins, the setting).</summary>
+    void ApplyClipboard(Peer p, RoamClip? clip)
     {
         if (clip is null) return;
-        _lastCrossText = clip.Signature;
-        var cb = Clipboard();
-        if (cb is null) return;
-        if (clip.Text is { } text) After(() => _ = cb.SetTextAsync(text));
-        else if (clip.Png is { } png) After(() => _ = cb.SetImageAsync(png));
+        var c = clip.ToClip(p.Id, ClipIdentity.NowMs());
+        p.LastClipId = c.Id; // that computer has it
+        if (Clipboard() is not { } sync) return;
+        After(() => _ = sync.ApplyAsync(c, "roam"));
     }
 
     // ---------------- the controller's requests ----------------
@@ -811,16 +830,16 @@ public sealed partial class RoamEngine : IDisposable
         {
             if (_e.PeerFor(peer.PeerId) is not { } p) return;
             _e.WriteLog($"Roam: going to {peer.Name}");
-            p.Outbox.EnqueueDeferred(RoamWire.Enter, EnterData(x, y));
+            p.Outbox.EnqueueDeferred(RoamWire.Enter, Task.Run(() => EnterData(p, x, y))); // the clipboard is read off the lock
             Wake(p);
             p.LastPing = _e._clock();
             _e.SetTimer(true);
             _e.After(() => _e._space.SetRoamInUse(false));
         }
 
-        async Task<JsonObject> EnterData(double x, double y) => RoamWire.EnterData(x, y, await _e.CrossingClipboardAsync().ConfigureAwait(false));
+        async Task<JsonObject> EnterData(Peer p, double x, double y) => RoamWire.EnterData(x, y, await _e.CrossingClipboardAsync(p).ConfigureAwait(false));
 
-        async Task<JsonObject> LeaveData() => RoamWire.LeaveData(await _e.CrossingClipboardAsync().ConfigureAwait(false));
+        async Task<JsonObject> LeaveData(Peer p) => RoamWire.LeaveData(await _e.CrossingClipboardAsync(p).ConfigureAwait(false));
 
         public void Send(string peerId, string type, JsonObject data)
         {
@@ -848,7 +867,8 @@ public sealed partial class RoamEngine : IDisposable
         public void Leave(RoamNeighbor peer)
         {
             if (_e.PeerFor(peer.PeerId) is not { } p) return;
-            p.Outbox.EnqueueDeferred(RoamWire.Leave, LeaveData());
+            if (p.ReleasedByIt) _e.Enqueue(p, RoamWire.Leave, RoamWire.LeaveData(null));
+            else p.Outbox.EnqueueDeferred(RoamWire.Leave, Task.Run(() => LeaveData(p)));
             Wake(p);
         }
 

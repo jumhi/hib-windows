@@ -9,11 +9,61 @@ public sealed class FakeClipboard : IClipboardBridge
     public string? Text;
     public byte[]? Image;
     public int Sets;
-    public Task<string?> GetTextAsync() => Task.FromResult(Text);
+    /// <summary>Like Windows: a sequence number that moves on every change (false = no counter, content compare only).</summary>
+    public bool CountChanges;
+    uint _count = 1;
+    /// <summary>The next N reads / writes fail like a clipboard held open by another app.</summary>
+    public int FailReads;
+    public int FailWrites;
+    public int Reads;
+    /// <summary>How long a read takes (a busy UI thread).</summary>
+    public TimeSpan ReadDelay = TimeSpan.Zero;
+
+    /// <summary>The user copies text here (Ctrl+C): the content and the counter change.</summary>
+    public void Copy(string text)
+    {
+        Text = text;
+        Image = null;
+        _count++;
+    }
+
+    public async Task<string?> GetTextAsync()
+    {
+        Interlocked.Increment(ref Reads);
+        if (ReadDelay > TimeSpan.Zero) await Task.Delay(ReadDelay);
+        if (FailReads > 0)
+        {
+            FailReads--;
+            throw new InvalidOperationException("OpenClipboard failed (busy)");
+        }
+        return Text;
+    }
+
     public Task<byte[]?> GetImagePngAsync() => Task.FromResult(Image);
-    public Task SetTextAsync(string text) { Text = text; Image = null; Sets++; return Task.CompletedTask; }
-    public Task SetImageAsync(byte[] imageBytes) { Image = imageBytes; Text = null; Sets++; return Task.CompletedTask; }
-    public uint? ChangeCount => null;
+
+    public Task SetTextAsync(string text)
+    {
+        if (FailWrites > 0)
+        {
+            FailWrites--;
+            throw new InvalidOperationException("OpenClipboard failed (busy)");
+        }
+        Text = text; Image = null; Sets++; _count++;
+        return Task.CompletedTask;
+    }
+
+    public Task SetImageAsync(byte[] imageBytes)
+    {
+        if (FailWrites > 0)
+        {
+            FailWrites--;
+            throw new InvalidOperationException("OpenClipboard failed (busy)");
+        }
+        Image = imageBytes; Text = null; Sets++; _count++;
+        return Task.CompletedTask;
+    }
+
+    public uint? ChangeCount => CountChanges ? _count : null;
 }
 
 /// <summary>

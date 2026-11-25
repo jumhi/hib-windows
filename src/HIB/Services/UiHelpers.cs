@@ -65,41 +65,30 @@ public sealed class AvaloniaClipboardBridge : IClipboardBridge
 
     public uint? ChangeCount => NativeClipboard.SequenceNumber;
 
-    public Task<string?> GetTextAsync() => Dispatcher.UIThread.InvokeAsync(async () =>
-    {
-        var cb = Clipboard;
-        if (cb is null) return null;
-        try { return await cb.TryGetTextAsync(); } catch { return null; }
-    });
+    // SPACE.md §16.2: a read or write that fails (OpenClipboard held by another app, no window yet) throws, so the
+    // clipboard sync retries it instead of taking "nothing there" for an answer.
+    IClipboard RequireClipboard() => Clipboard ?? throw new InvalidOperationException("No window for the clipboard yet");
+
+    public Task<string?> GetTextAsync() => Dispatcher.UIThread.InvokeAsync(async () => await RequireClipboard().TryGetTextAsync());
 
     public Task<byte[]?> GetImagePngAsync() => Dispatcher.UIThread.InvokeAsync(async () =>
     {
-        var cb = Clipboard;
-        if (cb is null) return null;
-        try
-        {
-            using var bmp = await cb.TryGetBitmapAsync();
-            if (bmp is null) return null;
-            using var ms = new MemoryStream();
+        using var bmp = await RequireClipboard().TryGetBitmapAsync();
+        if (bmp is null) return null;
+        using var ms = new MemoryStream();
 #pragma warning disable CS0618
-            bmp.Save(ms);
+        bmp.Save(ms);
 #pragma warning restore CS0618
-            return ms.ToArray();
-        }
-        catch { return null; }
+        return ms.ToArray();
     });
 
-    public Task SetTextAsync(string text) => Dispatcher.UIThread.InvokeAsync(async () =>
-    {
-        var cb = Clipboard;
-        if (cb is not null) await cb.SetTextAsync(text);
-    });
+    public Task SetTextAsync(string text) => Dispatcher.UIThread.InvokeAsync(async () => await RequireClipboard().SetTextAsync(text));
 
     public Task SetImageAsync(byte[] imageBytes) => Dispatcher.UIThread.InvokeAsync(async () =>
     {
-        var cb = Clipboard;
-        var bmp = ImageUtil.FromBytes(imageBytes);
-        if (cb is not null && bmp is not null) await cb.SetBitmapAsync(bmp);
+        var cb = RequireClipboard();
+        var bmp = ImageUtil.FromBytes(imageBytes) ?? throw new InvalidOperationException("Not an image");
+        await cb.SetBitmapAsync(bmp);
     });
 }
 
