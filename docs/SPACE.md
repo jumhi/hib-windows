@@ -850,8 +850,8 @@ D→P {"type":"screenResumed","data":{}}                                // follo
   `u8 kind` (1 = config: H.264 SPS+PPS Annex-B, 2 = keyframe, 3 = frame, 4 = JPEG image) ·
   `u32 seq` · `u64 ptsMicros` · `f32 cursorX` · `f32 cursorY` (fractions of the **encoded view**, may be outside
   0…1 when the cursor is off the view) · `u8 cursorVisible` (0/1).
-  H.264 payloads are Annex-B access units (start codes), Baseline/Main, no B-frames; a config frame always
-  precedes the first keyframe and every resolution change. Keyframe every 2 s and on `screenKeyframe`.
+  H.264 payloads are Annex-B access units (start codes), Baseline/Main, no B-frames; a config frame (kind 1)
+  precedes **every** keyframe (so a phone that reset its decoder after `screenKeyframe` recovers). Keyframe every 2 s and on `screenKeyframe`.
 - **Cursor:** never drawn into the video; the phone draws it from the header.
 - **Adaptive:** start 8 Mbps / 60 fps on a LAN route, 3 Mbps / 30 fps when the phone is on a Tailscale address
   (it says so with `"route":"tailscale"` in `screenOpen`). The server never queues more than 2 frames: when the
