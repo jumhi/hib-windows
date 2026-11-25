@@ -507,27 +507,21 @@ public static class AnnexB
 }
 
 /// <summary>
-/// A config frame goes out before the first keyframe of a session, after a resume or a new size, and whenever the
-/// encoder's SPS/PPS change; not before every periodic keyframe.
+/// §15.3: a config frame (SPS + PPS) goes out immediately before every keyframe — the phone resets its decoder on
+/// screenKeyframe and needs the config again. The encoder's latest SPS/PPS are remembered for keyframes that don't
+/// carry their own.
 /// </summary>
 public sealed class ScreenConfigTracker
 {
-    byte[]? _sent;
-    bool _force = true;
-
     public byte[]? Latest { get; private set; }
 
-    /// <summary>Next keyframe must carry a config (start, resume, display or size change).</summary>
-    public void Reset() => _force = true;
+    /// <summary>A new size or display: forget the old SPS/PPS (they would describe the wrong picture).</summary>
+    public void Reset() => Latest = null;
 
-    /// <summary>The config to send before this keyframe, or null.</summary>
+    /// <summary>The config to send right before this keyframe (null only while the encoder never gave one).</summary>
     public byte[]? ForKeyframe(byte[]? configInFrame)
     {
         if (configInFrame is not null) Latest = configInFrame;
-        if (Latest is null) return null;
-        if (!_force && _sent is not null && _sent.AsSpan().SequenceEqual(Latest)) return null;
-        _force = false;
-        _sent = Latest;
         return Latest;
     }
 }

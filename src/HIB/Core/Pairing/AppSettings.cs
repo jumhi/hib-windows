@@ -61,6 +61,12 @@ public sealed class AppSettings
     /// <summary>The Flick shelf: a slim pill at the top of the screen that opens into device bubbles while dragging files (Windows).</summary>
     public bool ShowFlickShelf { get; set; } = true;
 
+    // ---- Phone remote (SPACE.md §15) ----
+    /// <summary>"Allow viewing and control": the phone may see this PC's screen and drive it.</summary>
+    public bool RemoteAllowed { get; set; } = true;
+    /// <summary>"Stay reachable when locked" (null = the default: on once Unlock from phone is set up, so off on Windows for now).</summary>
+    public bool? RemoteStayReachable { get; set; }
+
     // ---- last phone (for wake-up / reconnect) ----
     public string? LastPhoneName { get; set; }
     public List<string> LastPhoneIps { get; set; } = new();

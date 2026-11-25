@@ -69,6 +69,10 @@
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="QRCoder" Version="1.9.0" />
+    <!-- Phone Remote on Windows (SPACE.md §15): DXGI Desktop Duplication, D3D11 video processor, Media Foundation H.264. MIT. -->
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
+    <PackageReference Include="Vortice.MediaFoundation" Version="3.8.3" />
   </ItemGroup>
 
   <!-- Keep the publish folder to the exe (+ tools): no managed or native .pdb files. -->

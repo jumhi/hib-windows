@@ -139,6 +139,12 @@ public sealed class DeskDeck : IDisposable
 
     public IDesktopControl Control => _control;
 
+    /// <summary>
+    /// Phone Remote's "Allow viewing and control" (SPACE.md §15.1): when it is off, the phone's mouse, keys and typing
+    /// are ignored (media and volume still work).
+    /// </summary>
+    public Func<bool> RemoteInputAllowed { get; set; } = () => true;
+
     public bool IsOpen { get { lock (_gate) return _open; } }
 
     public event Action<string>? Log;
@@ -299,6 +305,10 @@ public sealed class DeskDeck : IDisposable
     public void Remote(string action, JsonElement d)
     {
         var c = _control;
+        if (action is "keypress" or "type" or "mouse_move" or "mouse_click" or "mouse_scroll"
+                or "arrow_up" or "arrow_down" or "arrow_left" or "arrow_right" or "enter" or "space" or "escape"
+            && !RemoteInputAllowed())
+            return;
         switch (action)
         {
             case "keypress":

@@ -101,6 +101,12 @@ public sealed class LinkServer : ILinkSession, IDisposable
     /// </summary>
     public Func<WebSocket, TcpClient, string, CancellationToken, Task>? PeerHandler { get; set; }
 
+    /// <summary>
+    /// Handles an upgraded <c>/screen</c> WebSocket (SPACE.md §15.3, the Phone Remote's picture). Runs for the whole
+    /// session; the TCP client is disposed when it returns. Null = no screen path (404).
+    /// </summary>
+    public Func<WebSocket, TcpClient, string, CancellationToken, Task>? ScreenHandler { get; set; }
+
     /// <summary>False while this computer has no space key: <c>/peer</c> upgrades are refused.</summary>
     public Func<bool>? PeerAccepts { get; set; }
 
@@ -264,6 +270,22 @@ public sealed class LinkServer : ILinkSession, IDisposable
             var peerWs = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero, DangerousDeflateOptions = null });
             try { await handler(peerWs, client, remote, serverCt).ConfigureAwait(false); }
             catch (Exception ex) { WriteLog("Peer session error: " + ex.Message); }
+            finally { client.Dispose(); }
+            return;
+        }
+
+        // SPACE.md §15.3: the Phone Remote's screen stream (its first frame proves the pairing key).
+        if (isUpgrade && path == "/screen" && ScreenHandler is { } screen && headers.TryGetValue("Sec-WebSocket-Key", out var screenKey))
+        {
+            var screenAccept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(screenKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+            var screenResponse = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                                 $"Sec-WebSocket-Accept: {screenAccept}\r\n\r\n";
+            try { await stream.WriteAsync(Encoding.ASCII.GetBytes(screenResponse), serverCt).ConfigureAwait(false); }
+            catch { client.Dispose(); return; }
+            // Video frames are already compressed: no per-message deflate. The phone's own pings keep it alive.
+            var screenWs = WebSocket.CreateFromStream(stream, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero, DangerousDeflateOptions = null });
+            try { await screen(screenWs, client, remote, serverCt).ConfigureAwait(false); }
+            catch (Exception ex) { WriteLog("Screen session error: " + ex.Message); }
             finally { client.Dispose(); }
             return;
         }
