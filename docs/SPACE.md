@@ -787,3 +787,88 @@ Whenever the phone link is up and this computer has ever had ADB working with th
   bundle until all arrived.
 - **Computer → phone:** a bundle arrives as one notification "5 photos from <name>" with a preview strip; tapping
   opens a viewer with all of them (Open / Share / Save all).
+
+## 15. Phone Remote: see, drive and unlock (phase 1)
+Design and reasons: `docs/superpowers/specs/2026-11-24-phone-remote-design.md`. This section is the contract.
+
+### 15.1 Main link (`/socket`, encrypted as today)
+```json
+P→D {"type":"remoteHelloRequest","data":{}}
+D→P {"type":"remoteHello","data":{"v":1,"id":"<computer id, §2>","platform":"mac|windows",
+      "screen":true,"control":true,"unlock":"ready|needsSetup|unsupported|managed","locked":false,
+      "displays":[{"id":"<§7.1 id>","name":"Odyssey G9","w":5120,"h":1440,"main":true}],
+      "addrs":["100.101.102.103","fd7a:115c:a1e0::1"]}}
+D→P {"type":"remoteLockState","data":{"locked":true}}           // on change, to every connected phone
+D→P {"type":"remoteFocus","data":{"text":true,"secure":false}}   // on change (debounce 150 ms) while a /screen session is open
+P→D {"type":"unlockRequest","data":{}}
+D→P {"type":"unlockChallenge","data":{"nonce":"<base64, 32 random bytes>"}}   // valid 30 s, one use
+P→D {"type":"unlockApprove","data":{"nonce":"…","sig":"<base64 DER ECDSA P-256/SHA-256>"}}
+D→P {"type":"unlockResult","data":{"ok":false,"error":null|"notSetUp|wrongPassword|notLocked|failed|expired|badSignature|busy"}}
+D→P {"type":"unlockEnrollRequest","data":{"name":"<computer name>"}}  // computer's setup asks the phone for its key
+P→D {"type":"unlockEnroll","data":{"phoneId":"<stable random id of this phone install>","publicKey":"<base64 X.509 SPKI DER, P-256>"}}
+D→P {"type":"unlockEnrollResult","data":{"ok":true}}
+```
+- `remoteHello` is sent on request and whenever any field changes. `control:false` / `screen:false` when the
+  user turned "Allow viewing and control" off. `addrs` = this computer's Tailscale addresses: interface
+  addresses inside `100.64.0.0/10` or `fd7a:115c:a1e0::/48` (empty if none). The phone remembers them per
+  computer id and dials them when LAN addresses fail (start them 1 s after the LAN attempts; first open wins).
+- **Signature:** `sig` = ECDSA-SHA256 (DER) over the UTF-8 bytes of `"hib-unlock-v1|" + id + "|" + nonce`
+  (`id` = `remoteHello.id`, `nonce` = the base64 string exactly as sent). Android signs through
+  `BiometricPrompt.CryptoObject(Signature("SHA256withECDSA"))` with a Keystore key created with
+  `setUserAuthenticationRequired(true)` + auth-per-use (`BIOMETRIC_STRONG | DEVICE_CREDENTIAL`),
+  `setInvalidatedByBiometricEnrollment(true)`, StrongBox if available; one key per computer id.
+- **Enrolment:** accepted only while the computer's own "Set up Unlock from phone" flow is open (≤ 2 min after it
+  sent `unlockEnrollRequest`), from the phone link it sent the request on. One enrolled key per computer
+  (re-enrolling replaces it). The phone shows "Allow unlocking <name> with your fingerprint?" then the prompt.
+- **Rate limits:** one `unlockRequest` per 5 s (else `busy`); after 3 `wrongPassword` results, unlock turns off on
+  that computer (`unlock:"needsSetup"`) until set up again there.
+- Windows in phase 1 reports `unlock:"managed"` when domain- or Entra-joined, else `"unsupported"`.
+
+### 15.2 Input
+Unchanged `remoteControl` (PROTOCOL.md): `mouse_move{dx,dy}`, `mouse_click{button,isDown}`, `mouse_scroll{dx,dy}`,
+`keypress{keycode,modifiers}`, `type{text}`. Drag = `mouse_click left isDown:true`, moves, `isDown:false`.
+On the Mac these are executed by the `H.I.B Input` helper (so they survive app updates).
+
+### 15.3 Screen stream (`ws://<ip>:<port>/screen`)
+- Opened by the phone only while the Remote picture is visible; one session per phone per computer.
+- **Text frames** are encrypted exactly like `/socket` (base64 of `nonce12‖ct‖tag16`, pairing key).
+  **Binary frames** are the same AES-256-GCM output **raw** (no base64): `nonce12‖ct‖tag16`.
+- The first frame must be a text `screenOpen` that decrypts with the pairing key within 5 s, else close 4003.
+```json
+P→D {"type":"screenOpen","data":{"display":"<id or \"\" = main>","maxW":2400,"maxH":1080,"fps":60,
+      "codec":"h264|jpeg","view":{"x":0,"y":0,"w":1,"h":1}}}
+D→P {"type":"screenOpened","data":{"display":"<id>","w":1920,"h":540,"codec":"h264"}}   // w,h = encoded size
+P→D {"type":"screenView","data":{"x":0.2,"y":0.1,"w":0.5,"h":0.5}}   // visible region, fractions of the display
+P→D {"type":"screenDisplay","data":{"display":"<id>"}}                // → new screenOpened + keyframe
+P→D {"type":"screenKeyframe","data":{}}
+P→D {"type":"screenPing","data":{"t":<phone ms>}}  → D→P {"type":"screenPong","data":{"t":<same>}}  // every 1 s
+P→D {"type":"screenStats","data":{"fps":58,"rttMs":23,"decodeMs":4}}  // every 2 s
+D→P {"type":"screenPaused","data":{"reason":"locked|macPermission|stopped"}}
+D→P {"type":"screenResumed","data":{}}                                // followed by config + keyframe
+```
+- **Binary plaintext** = 22-byte little-endian header, then payload:
+  `u8 kind` (1 = config: H.264 SPS+PPS Annex-B, 2 = keyframe, 3 = frame, 4 = JPEG image) ·
+  `u32 seq` · `u64 ptsMicros` · `f32 cursorX` · `f32 cursorY` (fractions of the **encoded view**, may be outside
+  0…1 when the cursor is off the view) · `u8 cursorVisible` (0/1).
+  H.264 payloads are Annex-B access units (start codes), Baseline/Main, no B-frames; a config frame always
+  precedes the first keyframe and every resolution change. Keyframe every 2 s and on `screenKeyframe`.
+- **Cursor:** never drawn into the video; the phone draws it from the header.
+- **Adaptive:** start 8 Mbps / 60 fps on a LAN route, 3 Mbps / 30 fps when the phone is on a Tailscale address
+  (it says so with `"route":"tailscale"` in `screenOpen`). The server never queues more than 2 frames: when the
+  socket is behind, it drops non-key frames (newest wins) and steps the bitrate down (×0.7, floor 1 Mbps), then
+  fps (60 → 30 → 15); it steps back up after 5 s without drops.
+- **Close codes:** 4003 bad key · 4010 screen capture not permitted (Mac: Screen Recording for H.I.B Input) ·
+  4012 viewing turned off or Stop pressed (refused for 60 s after Stop) · 4013 another phone already viewing.
+- **Locked:** no video while locked; `screenPaused{reason:"locked"}`, then `screenResumed` after unlock.
+- **JPEG fallback** (`codec:"jpeg"`, when the phone's decoder can't do H.264): kind 4, ≤ 10 fps, quality 0.6.
+
+### 15.4 On the computer
+- While any `/screen` session is open: pill "● Controlled from <phone name>" with **Stop** (top-centre of the main
+  display, click-through except the button), and a keep-awake assertion (display + system).
+- "Stay reachable when locked" (default on once unlock is set up): prevent idle **system** sleep while on mains
+  power (display may sleep).
+- Settings (same words on both): **Phone remote** — Allow viewing and control · Unlock from phone (Set up / Change
+  password / Turn off; Windows: explains managed / not yet) · Stay reachable when locked · (Mac) Screen
+  Recording for H.I.B Input with live tick and Open button.
+- Log: `[remote] opened by <phone> display <name> <w>x<h> <codec>`, `[remote] closed (<reason>)`,
+  `[remote] unlock ok|failed <error>` — never the password.
