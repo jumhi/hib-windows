@@ -68,13 +68,14 @@ public sealed unsafe class MfH264Encoder : IDisposable
     }
 
     /// <summary>A hardware encoder if one takes this size, else the software one. Null when neither works.</summary>
-    public static MfH264Encoder? Create(int w, int h, int fps, int bitrate, Action<string>? log = null)
+    public static MfH264Encoder? Create(int w, int h, int fps, int bitrate, bool allowHardware = true, Action<string>? log = null)
     {
         Startup();
         var input = new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = VideoFormatGuids.NV12 };
         var output = new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = VideoFormatGuids.H264 };
         foreach (var hardware in new[] { true, false })
         {
+            if (hardware && !allowHardware) continue;
             var flags = hardware ? MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER : MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_LOCALMFT | MFT_ENUM_FLAG_SORTANDFILTER;
             IMFActivateCollection? list = null;
             try { list = MediaFactory.MFTEnumEx(TransformCategoryGuids.VideoEncoder, flags, input, output); }

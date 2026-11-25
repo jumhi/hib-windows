@@ -92,6 +92,7 @@ public sealed partial class WindowsScreenPipeline : IScreenPipeline
         long lastSent = -10_000;
         var lastCursor = (X: double.NaN, Y: double.NaN, Visible: false);
         var bitrateApplied = 0;
+        var hardwareFailed = false; // a hardware encoder that took the format but failed to encode: software from now on
         var old = SetThreadDpiAwarenessContext(-4); // physical pixels for the cursor, like the desktop coordinates
 
         try
@@ -169,7 +170,7 @@ public sealed partial class WindowsScreenPipeline : IScreenPipeline
                     encoder = null;
                     if (config.Codec == ScreenCodec.H264)
                     {
-                        try { encoder = MfH264Encoder.Create(config.OutW, config.OutH, _fps, _bitrate); }
+                        try { encoder = MfH264Encoder.Create(config.OutW, config.OutH, _fps, _bitrate, allowHardware: !hardwareFailed); }
                         catch { encoder = null; }
                         if (encoder is null)
                         {
@@ -236,6 +237,7 @@ public sealed partial class WindowsScreenPipeline : IScreenPipeline
                         if (bgra is null) continue;
                         var jpeg = JpegFrameEncoder.Encode(bgra, config.OutW, config.OutH, config.OutW * 4);
                         Raise(new PipelineFrame(jpeg, true, pts, cursor.X, cursor.Y, cursor.Visible, config));
+                        failures = 0;
                     }
                     else if (encoder is not null)
                     {
@@ -247,8 +249,16 @@ public sealed partial class WindowsScreenPipeline : IScreenPipeline
                         encoder.SetFps(fps);
                         var nv12 = capture.Render(crop, config.OutW, config.OutH, nv12: true);
                         if (nv12 is null) continue;
-                        foreach (var (data, isKey) in encoder.Encode(nv12, pts * 10, key))
+                        System.Collections.Generic.List<(byte[] Data, bool IsKey)> units;
+                        try { units = encoder.Encode(nv12, pts * 10, key); }
+                        catch
+                        {
+                            if (encoder.IsHardware) hardwareFailed = true;
+                            throw;
+                        }
+                        foreach (var (data, isKey) in units)
                             Raise(new PipelineFrame(data, isKey, pts, cursor.X, cursor.Y, cursor.Visible, config));
+                        failures = 0;
                     }
                 }
                 catch (Exception ex)

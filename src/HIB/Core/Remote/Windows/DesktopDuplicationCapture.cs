@@ -162,7 +162,7 @@ public sealed class DesktopDuplicationCapture : IDisposable
             pickOutput?.Dispose();
             mainOutput?.Dispose();
             pickAdapter?.Dispose();
-            mainAdapter?.Dispose();
+            if (!ReferenceEquals(mainAdapter, pickAdapter)) mainAdapter?.Dispose(); // one adapter can hold both
         }
     }
 
