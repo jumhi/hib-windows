@@ -29,6 +29,36 @@ public static class LinkCrypto
         return Convert.ToBase64String(output);
     }
 
+    /// <summary>
+    /// SPACE.md §15.3 binary frames: the same AES-256-GCM output as <see cref="Encrypt(byte[], byte[])"/> but raw,
+    /// <c>nonce12‖ct‖tag16</c>, no base64.
+    /// </summary>
+    public static byte[] EncryptBytes(ReadOnlySpan<byte> plaintext, byte[] key)
+    {
+        var output = new byte[NonceSize + plaintext.Length + TagSize];
+        RandomNumberGenerator.Fill(output.AsSpan(0, NonceSize));
+        using var gcm = new AesGcm(key, TagSize);
+        gcm.Encrypt(output.AsSpan(0, NonceSize), plaintext,
+            output.AsSpan(NonceSize, plaintext.Length),
+            output.AsSpan(NonceSize + plaintext.Length, TagSize));
+        return output;
+    }
+
+    /// <summary>The plaintext of a raw binary frame, or null if it is not valid for this key.</summary>
+    public static byte[]? TryDecryptBytes(ReadOnlySpan<byte> frame, byte[] key)
+    {
+        if (frame.Length < NonceSize + TagSize) return null;
+        var ctLen = frame.Length - NonceSize - TagSize;
+        var pt = new byte[ctLen];
+        try
+        {
+            using var gcm = new AesGcm(key, TagSize);
+            gcm.Decrypt(frame[..NonceSize], frame.Slice(NonceSize, ctLen), frame.Slice(NonceSize + ctLen, TagSize), pt);
+        }
+        catch (CryptographicException) { return null; }
+        return pt;
+    }
+
     /// <summary>Returns the UTF-8 plaintext, or null if the frame is not valid for this key.</summary>
     public static string? TryDecrypt(string frame, byte[] key)
     {

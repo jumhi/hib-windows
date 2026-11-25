@@ -28,6 +28,8 @@ public sealed class HibCoreOptions
     public Func<HIB.Core.Act.IDesktopControl> Desktop { get; set; } = HIB.Core.Act.DesktopControls.CreateDefault;
     /// <summary>Desk Deck's live state (CPU, memory, battery, network).</summary>
     public Func<HIB.Core.Act.ISystemStats> Stats { get; set; } = HIB.Core.Act.DesktopControls.CreateStats;
+    /// <summary>Phone Remote (SPACE.md §15): capture + encode and the system parts (Windows by default, nothing elsewhere).</summary>
+    public HIB.Core.Remote.PhoneRemoteOptions Remote { get; set; } = new();
     /// <summary>How often an open Desk Deck gets deckState (2 s like the Mac).</summary>
     public TimeSpan? DeckInterval { get; set; }
 
@@ -83,6 +85,11 @@ public sealed class HibCore : IDisposable
         Aim.Log += AddLog;
         Deck = new HIB.Core.Act.DeskDeck(Link, Options.Desktop(), Options.Stats(), Options.DeckInterval) { Audio = () => space.Audio };
         Deck.Log += AddLog;
+        // Phone Remote (SPACE.md §15): /screen, remoteHello, lock state, focus; input stays remoteControl → Deck.
+        Remote = new HIB.Core.Remote.PhoneRemote(Link, Settings, () => Deck.Control.IsAvailable, () => Aim.Screens, Options.Remote);
+        Remote.Log += AddLog;
+        Deck.RemoteInputAllowed = () => Remote.Allowed;
+        Roam.System.SessionLockChanged += Remote.ReportLock;
         Link.ConnectionChanged += (_, connected) =>
         {
             if (!connected && Udp is not null) _ = Udp.BurstAsync();
@@ -110,6 +117,8 @@ public sealed class HibCore : IDisposable
     public HIB.Core.Roam.RoamEngine Roam { get; }
     /// <summary>Desk Deck, the Remote and media controls from the phone (SPACE.md §11.3).</summary>
     public HIB.Core.Act.DeskDeck Deck { get; }
+    /// <summary>Phone Remote: the phone sees and drives this PC (SPACE.md §15).</summary>
+    public HIB.Core.Remote.PhoneRemote Remote { get; }
     public UdpPresence? Udp { get; private set; }
     public MdnsAdvertiser? Mdns { get; private set; }
 
@@ -235,6 +244,7 @@ public sealed class HibCore : IDisposable
         Clipboard?.Dispose();
         Udp?.Dispose();
         Mdns?.Dispose();
+        Remote.Dispose();
         Roam.Dispose();
         Deck.Dispose();
         SpaceEngine.Dispose();

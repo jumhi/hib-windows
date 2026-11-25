@@ -96,6 +96,7 @@ public partial class MainViewModel : ViewModelBase
         Register(new NavItem("clipboard", "Clipboard", Icons.Clipboard, () => new ClipboardViewModel(app), 120));
         Register(new NavItem("files", "Files", Icons.Folder, () => new FilesViewModel(app), 130));
         Register(new NavItem("flick", "Flick", Icons.Hand, () => new FlickSettingsViewModel(Settings), 140));
+        Register(new NavItem("remote", "Phone remote", Icons.MousePointerClick, () => new PhoneRemoteSettingsViewModel(app), 145));
         if (app.Features is { } f)
         {
             Register(new NavItem("phone", "Mirroring & ADB", Icons.Cast, () => new PhoneViewModel(app, f), 150));

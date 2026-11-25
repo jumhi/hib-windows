@@ -36,6 +36,8 @@ public sealed class AppController
         if (lifetime is not null) SpaceUi = new SpaceUiHost(this);
         // Roam: shared mouse & keyboard — the edge glow, the drop catcher, the ghost card (SPACE.md §9).
         Roam = new RoamHost(this);
+        // Phone Remote: "Controlled from <phone>" with Stop while the phone views this PC (SPACE.md §15.4).
+        Remote = new RemoteHost(this);
         // Point & Flick: screensInfo to the phone, the aim light and the point target (SPACE.md §7).
         Point = new PointFlickHost(this);
         // Room: "Your desk" from the Devices tab, and by itself when a new computer joins (SPACE.md §10.4).
@@ -86,6 +88,7 @@ public sealed class AppController
     public FlickPresenter Flick { get; }
     public PointFlickHost Point { get; }
     public RoamHost Roam { get; }
+    public RemoteHost Remote { get; }
     public RoomPresenter Room { get; }
     public HIB.Views.Flick.FlickCardManager Cards { get; }
     public SpaceUiHost? SpaceUi { get; }
@@ -117,6 +120,7 @@ public sealed class AppController
         _quitting = true;
         try { SpaceUi?.Dispose(); } catch { }
         try { Roam.Dispose(); } catch { }
+        try { Remote.Dispose(); } catch { }
         try { Features?.Dispose(); } catch { }
         try { Core.Dispose(); } catch { }
         _lifetime?.Shutdown();

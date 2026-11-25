@@ -15,6 +15,9 @@ H.I.B for Windows releases bundle or use the following. Each keeps its own licen
 | Inter font | app | SIL Open Font License 1.1 |
 | SkiaSharp | app | MIT |
 | System.Security.Cryptography.ProtectedData | app | MIT |
+| [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) 3.8.3 (`Vortice.Direct3D11`, `Vortice.DXGI`, `Vortice.MediaFoundation`, `Vortice.DirectX`) — Phone Remote screen capture and H.264 | app | MIT |
+| [Vortice.Mathematics](https://github.com/amerkoleci/Vortice.Mathematics) 2.1.0 (used by Vortice.Windows) | app | MIT |
+| [SharpGen.Runtime](https://github.com/SharpGenTools/SharpGenTools) 2.4.2-beta (`SharpGen.Runtime`, `SharpGen.Runtime.COM`; used by Vortice.Windows) | app | MIT |
 | .NET runtime | app | MIT |
 
 The tools are the unmodified files from the official scrcpy Windows release

@@ -26,7 +26,8 @@ public sealed class TestHost : IAsyncDisposable
 
     public TestHost(TimeSpan? pingInterval = null, TimeSpan? activityTimeout = null, string? name = null,
         HIB.Core.Space.SpaceOptions? space = null, string? root = null, HIB.Core.Roam.RoamOptions? roam = null,
-        Func<HIB.Core.Act.IDesktopControl>? desktop = null, Func<HIB.Core.Act.ISystemStats>? stats = null, TimeSpan? deckInterval = null)
+        Func<HIB.Core.Act.IDesktopControl>? desktop = null, Func<HIB.Core.Act.ISystemStats>? stats = null, TimeSpan? deckInterval = null,
+        HIB.Core.Remote.PhoneRemoteOptions? remote = null)
     {
         Root = root ?? Path.Combine(Path.GetTempPath(), "hib-tests", Guid.NewGuid().ToString("N")[..8]);
         Downloads = Path.Combine(Root, "Downloads");
@@ -47,6 +48,13 @@ public sealed class TestHost : IAsyncDisposable
             Desktop = desktop ?? (() => new HIB.Core.Act.NullDesktopControl()),
             Stats = stats ?? (() => new HIB.Core.Act.SystemStats()),
             DeckInterval = deckInterval,
+            // …nor capture the screen, keep the PC awake or watch its focus (Phone Remote, SPACE.md §15).
+            Remote = remote ?? new HIB.Core.Remote.PhoneRemoteOptions
+            {
+                Pipelines = () => new HIB.Core.Remote.NullScreenPipelineFactory(),
+                System = () => new HIB.Core.Remote.NullRemoteSystem(),
+                TailscaleAddrs = () => Array.Empty<string>(),
+            },
         });
         Core.Settings.DesktopName = name ?? "Haitham’s PC & Co?=x+y";
         Core.Settings.Save();
