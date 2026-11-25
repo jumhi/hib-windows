@@ -47,6 +47,8 @@ You need: a Windows 10/11 PC and an Android phone (Android 11+), on the same Wi-
   MacBook is a laptop); drag computers into place and the mouse follows that arrangement
 - **Point to act:** point the phone at a computer and the Desk Deck, Remote, Scenes and media controls
   work there
+- **Phone Remote:** see this PC's screen live on your phone, use the phone as a touchpad, and the keyboard pops up
+  when you tap a text box; works from home over Tailscale
 - Phone screen mirroring, phone apps in their own windows, phone audio on the PC (scrcpy)
 - Find My phone, ring the phone, Phone Agent
 
