@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HIB.ViewModels"
+             xmlns:c="using:HIB.Views.Controls"
+             x:Class="HIB.Views.PhoneRemoteSettingsView"
+             x:DataType="vm:PhoneRemoteSettingsViewModel">
+  <!-- Settings › Phone remote (the Mac's PhoneRemoteSettingsView; SPACE.md §15.4) -->
+  <ScrollViewer Padding="22,0,22,24">
+    <StackPanel Spacing="14" MaxWidth="760">
+      <c:SectionHeader Title="Phone remote" IconData="{x:Static vm:Icons.MousePointerClick}"/>
+
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Classes="tile" Margin="0,0,14,0">
+              <c:Icon Data="{x:Static vm:Icons.MonitorSmartphone}"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+              <TextBlock Text="See and drive this computer from your phone" Classes="headline"/>
+              <TextBlock Classes="caption" TextWrapping="Wrap"
+                         Text="Open Remote on the phone to see this screen, use the phone as a touchpad and type. While the phone is viewing, a notice with a Stop button shows at the top of the screen."/>
+            </StackPanel>
+          </Grid>
+          <Border Classes="divider"/>
+
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.MousePointerClick}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="Allow viewing and control" VerticalAlignment="Center"/>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding Allowed}"/>
+          </Grid>
+
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Activity}" Classes="muted" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Text="{Binding ViewingText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <Button Grid.Column="2" Content="Stop" Command="{Binding StopCommand}" IsVisible="{Binding IsViewing}"/>
+          </Grid>
+
+          <Border Classes="divider"/>
+          <Grid ColumnDefinitions="Auto,*">
+            <c:Icon Data="{x:Static vm:Icons.Lock}" Classes="muted" Margin="0,0,10,0" VerticalAlignment="Top"/>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Unlock from phone" FontWeight="SemiBold"/>
+              <TextBlock Text="{Binding UnlockText}" Classes="caption" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Grid>
+
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Data="{x:Static vm:Icons.Power}" Classes="muted" Margin="0,0,10,0" VerticalAlignment="Top"/>
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock Text="Stay reachable when locked"/>
+              <TextBlock Text="{Binding StayAwakeCaption}" Classes="faint" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding WifiCaption}" Classes="faint" TextWrapping="Wrap"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding StayReachable}" VerticalAlignment="Top"/>
+          </Grid>
+
+          <Border Classes="divider"/>
+          <Grid ColumnDefinitions="Auto,*">
+            <c:Icon Data="{x:Static vm:Icons.Globe}" Classes="muted" Margin="0,0,10,0" VerticalAlignment="Top"/>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="From anywhere" FontWeight="SemiBold"/>
+              <TextBlock Text="{Binding TailscaleCaption}" Classes="caption" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding TailscaleStatus}" Classes="faint" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
