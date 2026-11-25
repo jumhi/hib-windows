@@ -144,6 +144,7 @@ public sealed class FeatureHost : IDisposable
         Adb = new AdbService(AdbLocator.Shared, Settings);
         Pairing = new AdbPairingService(Adb);
         AppOps = new AppOpsGranter(Adb);
+        AppOps.Log += core.AddLog;
         AppOps.Start();
         Mirror = new MirrorService(Adb, Settings);
         Audio = new PhoneAudioBridge(Adb, Link, Settings);
