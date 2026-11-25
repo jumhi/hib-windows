@@ -426,6 +426,8 @@ It answers `volumeControlResponse` (the Mac drops it).
 | `mouse_move` | `dx`, `dy` (Double) | relative move |
 | `mouse_click` | `button: "left"|"right"|"center"`, `isDown: Bool` | button down/up |
 | `mouse_scroll` | `dx`, `dy` (Double) | scroll |
+| `mouse_move_abs` | `x`, `y` (fractions 0…1 of the display), `display` (§7.1 id, `""` = main) | pointer to that point (SPACE.md §15.5). Windows: the display's desktop pixels → `SendInput` absolute virtual-desktop coordinates (any monitor, negative origins, physical pixels); unknown id = main |
+| `key` | `keycode` (macOS virtual keycode), `isDown: Bool` | hold / let go of one key (SPACE.md §15.5). Windows: ⌘ → Ctrl and ⌃ → Win with ⌘-as-Ctrl (on by default), a held ⌘ + Tab sends **Alt**+Tab; every held key (and mouse button) is let go when the `/screen` session ends, the phone link drops, control is turned off, or 10 s pass with no `remoteControl` |
 | `lock_screen`, `screensaver`, `brightness_up`, `brightness_down` | – | |
 
 The phone's BLE fallback drops the `mouse_*` actions (`WebSocketUtil.kt:670-681`).

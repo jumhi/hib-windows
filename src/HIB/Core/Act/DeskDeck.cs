@@ -3,7 +3,8 @@
 //  - Desk Deck: deckOpen → deckState every 2 s while open; deckAction → deckActionResult
 //    (Mac: Core/DeskDeck/DeskDeckManager.swift).
 //  - remoteControl: keys (macOS virtual keycodes, translated), text, arrows, volume, media, mouse
-//    (Mac: WebSocketServer+Handlers.swift handleRemoteControl, MacRemoteManager).
+//    (Mac: WebSocketServer+Handlers.swift handleRemoteControl, MacRemoteManager); §15.5 adds absolute moves
+//    (mouse_move_abs) and held keys (key), done in order on one queue and let go when the phone goes away (RemoteInput.cs).
 //  - macMediaControl → media keys / system volume, answered with macMediaControlResponse.
 // The operating system part sits behind IDesktopControl / ISystemStats (Windows: WindowsDesktopControl);
 // tests use fakes and nothing here ever touches real input elsewhere.
@@ -14,6 +15,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using HIB.Core.Link;
+using HIB.Core.Remote;
 using HIB.Core.Roam;
 using HIB.Core.Space;
 
@@ -49,6 +51,8 @@ public interface IDesktopControl
     void Key(int usage, bool down);
     void Text(string text);
     void MouseMove(double dx, double dy);
+    /// <summary>Moves the pointer to this desktop pixel (physical pixels of the virtual desktop; origins may be negative).</summary>
+    void MouseMoveTo(int x, int y);
     void MouseButton(RoamButton button, bool down);
     void Scroll(double dx, double dy);
 }
@@ -74,6 +78,7 @@ public sealed class NullDesktopControl : IDesktopControl
     public void Key(int usage, bool down) { }
     public void Text(string text) { }
     public void MouseMove(double dx, double dy) { }
+    public void MouseMoveTo(int x, int y) { }
     public void MouseButton(RoamButton button, bool down) { }
     public void Scroll(double dx, double dy) { }
 }
@@ -116,6 +121,12 @@ public sealed class DeskDeck : IDisposable
     readonly object _gate = new();
     readonly Timer _timer;
     readonly TimeSpan _volumeEcho;
+    // remoteControl runs in arrival order (a key's up must never pass its down), one at a time.
+    readonly object _inputGate = new();
+    readonly object _queueGate = new();
+    readonly RemoteHeldInput _held;
+    readonly Timer _heldTimer;
+    Task _remoteTail = Task.CompletedTask;
     bool _open;
     bool _disposed;
 
@@ -127,12 +138,25 @@ public sealed class DeskDeck : IDisposable
         _interval = interval ?? DefaultInterval;
         _volumeEcho = volumeEcho ?? TimeSpan.FromMilliseconds(500);
         _timer = new Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
+        _held = new RemoteHeldInput(control.Key, control.MouseButton);
+        _heldTimer = new Timer(_ => CheckHeld(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         link.MessageReceived += OnMessage;
         link.ConnectionChanged += (_, connected) =>
         {
-            if (!connected) SetOpen(false);
+            if (connected) return;
+            SetOpen(false);
+            ReleaseHeld("phone link lost");
         };
     }
+
+    /// <summary>This PC's displays (§7.1 ids, desktop pixels) for mouse_move_abs. The app: PhoneRemote.Displays.</summary>
+    public Func<IReadOnlyList<RemoteDisplay>> Displays { get; set; } = () => Array.Empty<RemoteDisplay>();
+
+    /// <summary>⌘ works as Ctrl (and ⌃ as the Windows key) for the phone's keys; on by default, like Roam (§9.3).</summary>
+    public Func<bool> CmdAsCtrl { get; set; } = () => true;
+
+    /// <summary>The clock for the 10 s held-key release (tests use a manual one).</summary>
+    public Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
 
     /// <summary>The phone's audio here ("phone_audio"): the app's scrcpy bridge.</summary>
     public Func<IPhoneAudioPlayer?> Audio { get; set; } = () => null;
@@ -168,7 +192,9 @@ public sealed class DeskDeck : IDisposable
                 if (d.ValueKind == JsonValueKind.Object && d.Str("action") is { Length: > 0 } remote)
                 {
                     var copy = d.Clone();
-                    _ = Task.Run(() => Remote(remote, copy));
+                    lock (_queueGate)
+                        _remoteTail = _remoteTail.ContinueWith(_ => RemoteSafely(remote, copy), CancellationToken.None,
+                            TaskContinuationOptions.None, TaskScheduler.Default);
                 }
                 break;
             case "macMediaControl":
@@ -301,68 +327,128 @@ public sealed class DeskDeck : IDisposable
 
     // ---------------- remoteControl ----------------
 
-    /// <summary>The phone's Remote (PROTOCOL.md §6.7) — keycodes are macOS virtual keycodes.</summary>
+    void RemoteSafely(string action, JsonElement d)
+    {
+        try { Remote(action, d); }
+        catch (Exception ex) { WriteLog("Remote " + action + ": " + ex.Message); }
+    }
+
+    static bool IsInput(string action) => action is "keypress" or "type" or "key" or "mouse_move" or "mouse_move_abs" or "mouse_click"
+        or "mouse_scroll" or "arrow_up" or "arrow_down" or "arrow_left" or "arrow_right" or "enter" or "space" or "escape";
+
+    /// <summary>The phone's Remote (PROTOCOL.md §6.7, SPACE.md §15.5) — keycodes are macOS virtual keycodes.</summary>
     public void Remote(string action, JsonElement d)
     {
-        var c = _control;
-        if (action is "keypress" or "type" or "mouse_move" or "mouse_click" or "mouse_scroll"
-                or "arrow_up" or "arrow_down" or "arrow_left" or "arrow_right" or "enter" or "space" or "escape"
-            && !RemoteInputAllowed())
-            return;
-        switch (action)
+        lock (_inputGate)
         {
-            case "keypress":
-                if (d.Int("keycode") is { } code && RoamKeys.FromMacKeycode(code) is { } usage) Press(usage, Modifiers(d));
-                break;
-            case "type":
-                if (d.Str("text") is { Length: > 0 } text)
-                {
-                    var mods = Modifiers(d);
-                    foreach (var m in mods) c.Key(m, true);
-                    c.Text(text);
-                    foreach (var m in mods.AsEnumerable().Reverse()) c.Key(m, false);
-                }
-                break;
-            case "arrow_up": Press(0x52); break;
-            case "arrow_down": Press(0x51); break;
-            case "arrow_left": Press(0x50); break;
-            case "arrow_right": Press(0x4F); break;
-            case "enter": Press(0x28); break;
-            case "space": Press(0x2C); break;
-            case "escape": Press(RoamKeys.Escape); break;
-            case "vol_up": EchoVolume(c.VolumeUp()); break;
-            case "vol_down": EchoVolume(c.VolumeDown()); break;
-            case "vol_mute": c.ToggleMute(); break;
-            case "vol_set":
-                if (d.Int("value") is { } value) EchoVolume(c.SetVolume(Math.Clamp(value, 0, 100)));
-                break;
-            case "media_play_pause": c.Media(MediaKey.PlayPause); break;
-            case "media_next": c.Media(MediaKey.Next); break;
-            case "media_prev": c.Media(MediaKey.Previous); break;
-            case "mouse_move":
-                if (d.Double("dx") is { } mx && d.Double("dy") is { } my && double.IsFinite(mx) && double.IsFinite(my)) c.MouseMove(mx, my);
-                break;
-            case "mouse_click":
-                if (d.Str("button") is { } b && d.Bool("isDown") is { } down)
-                    c.MouseButton(b switch { "right" => RoamButton.Right, "center" or "middle" => RoamButton.Middle, _ => RoamButton.Left }, down);
-                break;
-            case "mouse_scroll":
-                if (d.Double("dx") is { } sx && d.Double("dy") is { } sy && double.IsFinite(sx) && double.IsFinite(sy)) c.Scroll(sx, sy);
-                break;
-            case "lock_screen": c.Lock(); break;
-            case "screensaver": c.Screensaver(); break;
-            case "brightness_up": c.Brightness(1); break;
-            case "brightness_down": c.Brightness(-1); break;
+            var c = _control;
+            _held.Touch(Clock());
+            _held.CmdAsCtrl = CmdAsCtrl();
+            if (IsInput(action) && !RemoteInputAllowed())
+            {
+                ReleaseHeldLocked("viewing and control turned off");
+                return;
+            }
+            switch (action)
+            {
+                case "keypress":
+                    if (d.Int("keycode") is { } code) _held.Press(code, ModifierNames(d));
+                    break;
+                case "key":
+                    if (d.Int("keycode") is { } held && d.Bool("isDown") is { } isDown) _held.Key(held, isDown);
+                    break;
+                case "type":
+                    if (d.Str("text") is { Length: > 0 } text)
+                    {
+                        var heldNow = _held.HeldUsages.ToHashSet();
+                        var mods = RemoteKeyMap.Modifiers(ModifierNames(d), _held.CmdAsCtrl).Select(m => m.Usage).Where(m => !heldNow.Contains(m)).ToList();
+                        foreach (var m in mods) c.Key(m, true);
+                        c.Text(text);
+                        for (var i = mods.Count - 1; i >= 0; i--) c.Key(mods[i], false);
+                    }
+                    break;
+                case "arrow_up": Press(0x52); break;
+                case "arrow_down": Press(0x51); break;
+                case "arrow_left": Press(0x50); break;
+                case "arrow_right": Press(0x4F); break;
+                case "enter": Press(0x28); break;
+                case "space": Press(0x2C); break;
+                case "escape": Press(RoamKeys.Escape); break;
+                case "vol_up": EchoVolume(c.VolumeUp()); break;
+                case "vol_down": EchoVolume(c.VolumeDown()); break;
+                case "vol_mute": c.ToggleMute(); break;
+                case "vol_set":
+                    if (d.Int("value") is { } value) EchoVolume(c.SetVolume(Math.Clamp(value, 0, 100)));
+                    break;
+                case "media_play_pause": c.Media(MediaKey.PlayPause); break;
+                case "media_next": c.Media(MediaKey.Next); break;
+                case "media_prev": c.Media(MediaKey.Previous); break;
+                case "mouse_move":
+                    if (d.Double("dx") is { } mx && d.Double("dy") is { } my && double.IsFinite(mx) && double.IsFinite(my)) c.MouseMove(mx, my);
+                    break;
+                case "mouse_move_abs":
+                    if (d.Double("x") is { } ax && d.Double("y") is { } ay)
+                    {
+                        IReadOnlyList<RemoteDisplay> displays;
+                        try { displays = Displays(); }
+                        catch { displays = Array.Empty<RemoteDisplay>(); }
+                        if (RemotePointer.Target(ax, ay, d.Str("display"), displays) is { } p) c.MouseMoveTo(p.X, p.Y);
+                    }
+                    break;
+                case "mouse_click":
+                    if (d.Str("button") is { } b && d.Bool("isDown") is { } down)
+                        _held.Button(b switch { "right" => RoamButton.Right, "center" or "middle" => RoamButton.Middle, _ => RoamButton.Left }, down);
+                    break;
+                case "mouse_scroll":
+                    if (d.Double("dx") is { } sx && d.Double("dy") is { } sy && double.IsFinite(sx) && double.IsFinite(sy)) c.Scroll(sx, sy);
+                    break;
+                case "lock_screen": c.Lock(); break;
+                case "screensaver": c.Screensaver(); break;
+                case "brightness_up": c.Brightness(1); break;
+                case "brightness_down": c.Brightness(-1); break;
+            }
         }
     }
 
-    void Press(int usage, IReadOnlyList<int>? modifiers = null)
+    void Press(int usage) => _held.PressUsage(usage, Array.Empty<int>());
+
+    /// <summary>Keys and buttons the phone is holding down now (HID usages, buttons).</summary>
+    public (IReadOnlyList<int> Keys, IReadOnlyList<RoamButton> Buttons) Held
     {
-        var mods = modifiers ?? Array.Empty<int>();
-        foreach (var m in mods) _control.Key(m, true);
-        _control.Key(usage, true);
-        _control.Key(usage, false);
-        foreach (var m in mods.Reverse()) _control.Key(m, false);
+        get { lock (_inputGate) return (_held.HeldUsages, _held.HeldButtons); }
+    }
+
+    /// <summary>
+    /// Lets go of every key and button the phone holds (SPACE.md §15.5): the /screen session ended, the phone link dropped,
+    /// control was turned off, or 10 s passed without any remoteControl.
+    /// </summary>
+    public void ReleaseHeld(string reason)
+    {
+        lock (_inputGate) ReleaseHeldLocked(reason);
+    }
+
+    void ReleaseHeldLocked(string reason)
+    {
+        if (!_held.AnyHeld) return;
+        var n = _held.ReleaseAll();
+        WriteLog($"[remote] released {n} held key{(n == 1 ? "" : "s")} ({reason})");
+    }
+
+    /// <summary>The 10 s rule (the timer calls this every second; tests call it with their own clock).</summary>
+    public void CheckHeld()
+    {
+        lock (_inputGate)
+        {
+            if (_held.IdleExpired(Clock())) ReleaseHeldLocked("no remote input for 10 s");
+        }
+    }
+
+    /// <summary>The phone's modifier names (keypress / type).</summary>
+    static IEnumerable<string?> ModifierNames(JsonElement d)
+    {
+        if (d.ValueKind != JsonValueKind.Object || !d.TryGetProperty("modifiers", out var arr) || arr.ValueKind != JsonValueKind.Array) yield break;
+        foreach (var m in arr.EnumerateArray())
+            if (m.ValueKind == JsonValueKind.String) yield return m.GetString();
     }
 
     /// <summary>
@@ -370,24 +456,7 @@ public sealed class DeskDeck : IDisposable
     /// Option is Alt, Shift is Shift; "win"/"meta" is the Windows key; fn has no key of its own.
     /// </summary>
     public static IReadOnlyList<int> Modifiers(JsonElement d)
-    {
-        var list = new List<int>();
-        if (d.ValueKind != JsonValueKind.Object || !d.TryGetProperty("modifiers", out var arr) || arr.ValueKind != JsonValueKind.Array) return list;
-        foreach (var m in arr.EnumerateArray())
-        {
-            if (m.ValueKind != JsonValueKind.String) continue;
-            int? usage = (m.GetString() ?? "").Trim().ToLowerInvariant() switch
-            {
-                "shift" => RoamKeys.LeftShift,
-                "ctrl" or "control" or "command" or "cmd" => RoamKeys.LeftCtrl,
-                "option" or "alt" => RoamKeys.LeftAlt,
-                "win" or "windows" or "meta" or "super" => RoamKeys.LeftGui,
-                _ => null,
-            };
-            if (usage is { } u && !list.Contains(u)) list.Add(u);
-        }
-        return list;
-    }
+        => RemoteKeyMap.Modifiers(ModifierNames(d), cmdAsCtrl: true).Select(m => m.Usage).ToList();
 
     // ---------------- macMediaControl ----------------
 
@@ -422,6 +491,8 @@ public sealed class DeskDeck : IDisposable
             _open = false;
         }
         _link.MessageReceived -= OnMessage;
+        ReleaseHeld("closing");
         try { _timer.Dispose(); } catch { }
+        try { _heldTimer.Dispose(); } catch { }
     }
 }
