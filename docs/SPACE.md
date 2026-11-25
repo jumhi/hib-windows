@@ -928,3 +928,37 @@ coming back.
 ### 16.4 Diagnostics
 Each app logs one line per clip event: `[clip] copied|sent|applied|ignored(seen|older|off|size) id=<first 6 chars>
 from=<origin> via=<phone|roam|ble>` — never the content.
+
+### 15.5 Remote controls, round 2 (what real use showed, 2026-11-25)
+Haitham: reaching a spot with the touchpad-over-the-picture was hard and glitchy, and shortcuts (Alt+Tab, ⌘S, ⌘F)
+were impossible. Also the Mac's unlock failed because H.I.B Input's Accessibility grant still named the old helper
+binary (TCC csreq cdhash mismatch), and the phone wrongly said "check the password".
+
+**Two control modes** (the switch sits on the Remote's top bar; remembered per computer):
+- **Touchpad** (default): the lower part of the Remote is a big dedicated touchpad surface (like a laptop
+  trackpad); the live picture sits above it (tap the picture to expand it full screen, swipe down to shrink).
+  Relative moves with a pointer-acceleration curve (slow finger = precise, fast flick = far), sent at up to
+  120 Hz with no smoothing delay. Gestures as §5 of the design (tap, two-finger tap = right click, two-finger
+  scroll, double-tap-hold drag, three-finger swipe left/right = app switch: ⌘Tab / Alt+Tab).
+- **Direct**: the picture fills the Remote; **tap where you want** → the cursor jumps there and clicks; long-press =
+  right click; drag = left-drag; two-finger scroll; pinch zooms the view. Needs absolute moves (below).
+
+**New `remoteControl` actions** (both computers):
+```json
+{"action":"mouse_move_abs","x":0.42,"y":0.17,"display":"<§7.1 id or \"\">"}  // fractions of that display
+{"action":"key","keycode":55,"isDown":true}                                    // macOS virtual keycode, held until isDown:false
+```
+- `key` lets the phone **hold** modifiers (⌘/Ctrl, ⌥/Alt, ⇧, ⌃/Win) so Alt+Tab / ⌘Tab switchers stay open while Tab
+  is tapped. Windows maps keycodes as for `keypress` (⌘ → Ctrl when ⌘-as-Ctrl is on; a held ⌘ + Tab on Windows sends
+  **Alt**+Tab so the switcher works). On session end / link loss the computer releases every key held by `key`.
+- **Shortcut row** on the phone (platform-aware labels): ⌘Tab/Alt+Tab (hold-to-switch), ⌘C, ⌘V, ⌘Z, ⌘S, ⌘F, ⌘W, ⌘Q /
+  Alt+F4, ⌘Space / Win, Mission Control / Win+Tab, Esc, arrows; user can add custom combos.
+- **Sticky modifiers** on the key strip: tap = next key only, double-tap = locked (highlighted) until tapped again;
+  phone-keyboard characters typed while a modifier is active go out as `keypress` with modifiers (character →
+  keycode via the US layout table), not as `type` text.
+
+**Unlock errors:** add `"permission"` (the Mac's helper isn't allowed to type: Accessibility missing or stale).
+Phone texts: `permission` → "H.I.B Input on <name> needs Accessibility again. On the Mac: Privacy & Security →
+Accessibility → select H.I.B Input → remove (−) → allow it again." · `failed` → "Couldn't unlock <name>. Try again,
+or unlock it at the desk." · `wrongPassword` → "<name>'s password changed — set up Unlock from phone again there."
+The Mac also reports a stale grant in Settings and as a notification when the helper says `accessibility:false`.
