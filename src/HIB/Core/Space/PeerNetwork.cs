@@ -30,6 +30,8 @@ public sealed class PeerNetworkOptions
     /// (the Mac does the same; the duplicate rule still settles it if both dial).
     /// </summary>
     public TimeSpan PoliteDelay { get; set; } = TimeSpan.FromSeconds(1.5);
+    /// <summary>The wall clock the keepalive judges silence by (tests move it, e.g. to stand in for a sleep).</summary>
+    public Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
     /// <summary>What a linked computer's <c>peerDiag</c> gets (tests inject; default: the tail of hib.log).</summary>
     public Func<string>? DiagnosticsLog { get; set; }
 }
@@ -151,7 +153,7 @@ public sealed class PeerNetwork : IDisposable
 
     PeerLink Create(WebSocket ws, IDisposable? owner, byte[] key, bool isClient, string remoteIp)
     {
-        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp) { Log = WriteLog, Admit = AdmitLink, DiagnosticsLog = _options.DiagnosticsLog };
+        var link = new PeerLink(ws, owner, key, _ownHello(), isClient, remoteIp, _options.Clock) { Log = WriteLog, Admit = AdmitLink, DiagnosticsLog = _options.DiagnosticsLog };
         lock (_gate) _all.Add(link);
         link.HelloCompleted += OnHello;
         link.Closed += OnClosed;
@@ -380,19 +382,35 @@ public sealed class PeerNetwork : IDisposable
 
     // ---------------- keepalive ----------------
 
+    /// <summary>
+    /// Pings every live link each <see cref="PeerNetworkOptions.PingInterval"/> and drops one silent for
+    /// <see cref="PeerNetworkOptions.DropAfter"/>. A tick that comes far too late means this computer was asleep (or the
+    /// process frozen): the time asleep isn't the peer's silence, so silence is counted from the wake, after a ping
+    /// (the Mac's 2026-11-25 log: every "no frames … for 30 s" was logged within a second of that Mac waking).
+    /// </summary>
     async Task KeepAliveLoopAsync(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(_options.PingInterval);
+        var lastTick = _options.Clock();
+        var wokeAt = DateTime.MinValue;
         try
         {
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
                 List<PeerLink> links;
                 lock (_gate) links = _all.ToList();
-                var now = DateTime.UtcNow;
+                var now = _options.Clock();
+                var gap = now - lastTick;
+                lastTick = now;
+                if (gap > _options.PingInterval * 3)
+                {
+                    wokeAt = now;
+                    WriteLog($"[peer] woke after {gap.TotalSeconds:0}s without a keepalive tick: pinging before judging silence");
+                }
                 foreach (var l in links)
                 {
-                    if (now - l.LastActivity > _options.DropAfter)
+                    var heard = l.LastActivity > wokeAt ? l.LastActivity : wokeAt;
+                    if (now - heard > _options.DropAfter)
                     {
                         WriteLog($"Peer {l.PeerName}: silent for {(now - l.LastActivity).TotalSeconds:0}s — dropping");
                         _ = l.CloseAsync(1001, "timeout");
